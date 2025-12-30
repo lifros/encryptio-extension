@@ -1,0 +1,26 @@
+{
+    "manifest_version": 3,
+    "name": "Encryptio Password Manager",
+    "version": "1.0",
+    "description": "Password manager enterprise con autofill sicuro per encryptio.it",
+    "permissions": [
+      "storage",
+      "activeTab"
+    ],
+    "host_permissions": [
+      "https://www.encryptio.it/*"
+    ],
+    "action": {
+      "default_popup": "popup.html",
+      "default_icon": "icon.png"
+    },
+    "content_scripts": [
+      {
+        "matches": ["<all_urls>"],
+        "js": ["content.js"]
+      }
+    ],
+    "icons": {
+      "48": "icon.png"
+    }
+  }
