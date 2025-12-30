@@ -6,44 +6,36 @@
 // Ascolta messaggi dai content scripts e dal popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "get_auto_token") {
+        console.log('[Background] Richiesta token automatico ricevuta');
+        
         // Prova prima a chiamare direttamente l'API se il sender è su encryptio.it
         if (sender.tab && sender.tab.url && sender.tab.url.includes('encryptio.it')) {
+            console.log('[Background] Messaggio da tab encryptio.it, inoltro al content script');
             // Il messaggio viene dal content script su encryptio.it, usa la risposta diretta
             return true; // Il content script risponderà direttamente
         }
         
-        // Altrimenti, cerca un tab di encryptio.it aperto
+        // Cerca un tab di encryptio.it aperto
         chrome.tabs.query({ url: ["https://www.encryptio.it/*", "https://encryptio.it/*"] }, (tabs) => {
+            console.log('[Background] Tab encryptio.it trovati:', tabs.length);
+            
             if (tabs.length > 0) {
                 // Invia messaggio al tab di encryptio.it
                 chrome.tabs.sendMessage(tabs[0].id, { action: "get_auto_token" }, (response) => {
                     if (chrome.runtime.lastError) {
-                        sendResponse({ token: null, success: false, error: "Impossibile comunicare con encryptio.it" });
+                        console.error('[Background] Errore comunicazione con content script:', chrome.runtime.lastError);
+                        sendResponse({ token: null, success: false, error: "Impossibile comunicare con encryptio.it. Ricarica la pagina encryptio.it e riprova." });
                     } else if (response) {
+                        console.log('[Background] Risposta dal content script:', response.success ? 'OK' : 'ERRORE');
                         sendResponse(response);
                     } else {
-                        sendResponse({ token: null, success: false, error: "Nessuna risposta" });
+                        console.error('[Background] Nessuna risposta dal content script');
+                        sendResponse({ token: null, success: false, error: "Nessuna risposta da encryptio.it" });
                     }
                 });
             } else {
-                // Nessun tab aperto, prova a chiamare direttamente l'API (può funzionare se i cookie sono condivisi)
-                fetch('https://www.encryptio.it/api/v1/token/auto', {
-                    method: 'POST',
-                    credentials: 'include'
-                }).then(response => {
-                    if (response.ok) {
-                        return response.json();
-                    }
-                    throw new Error('Non autenticato');
-                }).then(data => {
-                    if (data.ok && data.token) {
-                        sendResponse({ token: data.token, success: true });
-                    } else {
-                        sendResponse({ token: null, success: false, error: "Apri encryptio.it e effettua il login" });
-                    }
-                }).catch(error => {
-                    sendResponse({ token: null, success: false, error: "Apri encryptio.it e effettua il login" });
-                });
+                console.log('[Background] Nessun tab encryptio.it aperto');
+                sendResponse({ token: null, success: false, error: "Apri encryptio.it in una scheda e assicurati di essere loggato, poi riprova." });
             }
         });
         return true; // Risposta asincrona

@@ -228,6 +228,8 @@ async function loadVaultFromFlask() {
         
         if (!token) {
             // Prova ancora una volta a ottenere il token automaticamente
+            content.innerHTML = `<div style="padding: 20px; color: #888; text-align: center;">Verifica autenticazione...</div>`;
+            
             try {
                 const autoToken = await getAutoToken();
                 if (autoToken) {
@@ -237,14 +239,35 @@ async function loadVaultFromFlask() {
                     return await loadVaultFromFlask();
                 }
             } catch (error) {
-                // Continua con il messaggio di errore
+                console.error('Errore ottenimento token:', error);
+                // Mostra messaggio più dettagliato
+                const errorMsg = error.message || 'Effettua il login su encryptio.it per continuare.';
+                content.innerHTML = `
+                    <div style="padding: 20px; text-align: center;">
+                        <p style="color: #dc3545; margin-bottom: 10px; font-weight: 600;">Autenticazione richiesta</p>
+                        <p style="color: #666; font-size: 12px; margin-bottom: 10px;">${errorMsg}</p>
+                        <div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin: 15px 0; text-align: left;">
+                            <p style="color: #333; font-size: 11px; font-weight: 600; margin-bottom: 8px;">Per risolvere:</p>
+                            <ol style="color: #666; font-size: 11px; margin: 0; padding-left: 20px; line-height: 1.6;">
+                                <li>Apri <a href="https://www.encryptio.it" target="_blank" style="color: #007bff;">encryptio.it</a> in una nuova scheda</li>
+                                <li>Assicurati di essere loggato</li>
+                                <li>Riprova aprendo questa estensione</li>
+                            </ol>
+                        </div>
+                        <a href="https://www.encryptio.it/auth/login" target="_blank" style="display: inline-block; margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 6px; font-size: 12px;">Vai al Login</a>
+                        <button onclick="location.reload()" style="display: block; margin: 10px auto 0; padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">Riprova</button>
+                    </div>
+                `;
+                return;
             }
             
+            // Se arriviamo qui, non abbiamo ottenuto il token
             content.innerHTML = `
                 <div style="padding: 20px; text-align: center;">
                     <p style="color: #dc3545; margin-bottom: 10px;">Autenticazione richiesta</p>
                     <p style="color: #666; font-size: 12px; margin-bottom: 15px;">Effettua il login su encryptio.it per continuare.</p>
                     <a href="https://www.encryptio.it/auth/login" target="_blank" style="display: inline-block; margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 6px; font-size: 12px;">Vai al Login</a>
+                    <button onclick="location.reload()" style="display: block; margin: 10px auto 0; padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">Riprova</button>
                 </div>
             `;
             return;
@@ -479,30 +502,33 @@ async function ensureAuthToken() {
             
             if (testResponse.ok) {
                 // Token valido, non serve fare nulla
+                console.log('Token esistente valido');
                 return;
             }
             
             // Token non valido, rimuovilo
             if (testResponse.status === 401) {
+                console.log('Token non valido, rimozione...');
                 await chrome.storage.local.remove(['auth_token']);
             }
         } catch (error) {
             // Errore di rete, mantieni il token e riprova dopo
-            console.log('Network error checking token, will retry later');
+            console.log('Network error checking token, will retry later:', error.message);
             return;
         }
     }
     
     // Non c'è token valido, prova a ottenerlo automaticamente
+    console.log('Tentativo di ottenere nuovo token...');
     try {
         const token = await getAutoToken();
         if (token) {
             await chrome.storage.local.set({ auth_token: token });
-            console.log('Token API ottenuto automaticamente');
+            console.log('Token API ottenuto automaticamente e salvato');
         }
     } catch (error) {
         console.log('Impossibile ottenere token automaticamente:', error.message);
-        // Non mostrare errore all'utente, sarà gestito in loadVaultFromFlask
+        // Non mostrare errore all'utente qui, sarà gestito in loadVaultFromFlask
     }
 }
 
@@ -510,18 +536,46 @@ async function ensureAuthToken() {
  * Ottiene automaticamente un token API se l'utente è loggato su encryptio.it
  */
 async function getAutoToken() {
+    // Prova prima direttamente l'API (i cookie potrebbero essere condivisi)
+    try {
+        const directResponse = await fetch('https://www.encryptio.it/api/v1/token/auto', {
+            method: 'POST',
+            credentials: 'include', // Invia i cookie di sessione
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (directResponse.ok) {
+            const data = await directResponse.json();
+            if (data.ok && data.token) {
+                console.log('Token ottenuto direttamente dall\'API');
+                return data.token;
+            }
+        } else if (directResponse.status === 401) {
+            console.log('API restituisce 401, utente non loggato o cookie non condivisi');
+        }
+    } catch (error) {
+        console.log('Errore chiamata diretta API:', error);
+    }
+    
+    // Se la chiamata diretta non funziona, prova tramite content script
     return new Promise((resolve, reject) => {
         // Usa il background script per comunicare con encryptio.it
         chrome.runtime.sendMessage({ action: "get_auto_token" }, (response) => {
             if (chrome.runtime.lastError) {
+                console.error('Errore comunicazione background:', chrome.runtime.lastError);
                 reject(new Error('Errore di comunicazione con l\'estensione'));
                 return;
             }
             
             if (response && response.success && response.token) {
+                console.log('Token ottenuto tramite content script');
                 resolve(response.token);
             } else {
-                reject(new Error(response?.error || 'Token non ottenuto'));
+                const errorMsg = response?.error || 'Token non ottenuto. Assicurati di essere loggato su encryptio.it';
+                console.error('Errore ottenimento token:', errorMsg);
+                reject(new Error(errorMsg));
             }
         });
     });
