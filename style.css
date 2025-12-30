@@ -55,11 +55,18 @@ input[type="text"] {
     display: flex;
     align-items: center;
     padding: 10px 15px;
-    transition: background 0.2s;
+    transition: background 0.2s, opacity 0.2s;
     cursor: pointer;
+    user-select: none;
 }
 
-.vault-item:hover { background: var(--light-gray); }
+.vault-item:hover { 
+    background: var(--light-gray);
+}
+
+.vault-item:active {
+    background: #e9ecef;
+}
 
 .vault-item img { width: 20px; margin-right: 12px; }
 

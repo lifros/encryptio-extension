@@ -5,7 +5,8 @@
     "description": "Password manager enterprise con autofill sicuro per encryptio.it",
     "permissions": [
       "storage",
-      "activeTab"
+      "activeTab",
+      "tabs"
     ],
     "host_permissions": [
       "https://www.encryptio.it/*"

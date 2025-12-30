@@ -482,11 +482,18 @@ function createVaultItemElement(item, isSuggestion = false) {
         <button class="fill-btn">Inserisci</button>
     `;
 
-    // Evento al click sul tasto inserisci
-    const fillBtn = div.querySelector('.fill-btn');
-    fillBtn.addEventListener('click', async () => {
+    // Funzione per inserire le credenziali
+    const fillCredentials = async (e) => {
+        // Previeni doppio trigger se si clicca sul pulsante
+        if (e && e.target && e.target.classList.contains('fill-btn')) {
+            e.stopPropagation();
+        }
+        
+        const fillBtn = div.querySelector('.fill-btn');
+        const originalText = fillBtn.textContent;
         fillBtn.disabled = true;
         fillBtn.textContent = '...';
+        div.style.opacity = '0.6';
         
         try {
             // Le password dall'API sono già decrittate lato server
@@ -504,7 +511,8 @@ function createVaultItemElement(item, isSuggestion = false) {
                 } else {
                     showNotification('Errore: chiave master non trovata', 'error');
                     fillBtn.disabled = false;
-                    fillBtn.textContent = 'Inserisci';
+                    fillBtn.textContent = originalText;
+                    div.style.opacity = '1';
                     return;
                 }
             }
@@ -513,11 +521,18 @@ function createVaultItemElement(item, isSuggestion = false) {
         } catch (error) {
             console.error('Error decrypting/filling:', error);
             showNotification('Errore durante l\'inserimento', 'error');
-        } finally {
             fillBtn.disabled = false;
-            fillBtn.textContent = 'Inserisci';
+            fillBtn.textContent = originalText;
+            div.style.opacity = '1';
         }
-    });
+    };
+
+    // Evento al click sull'intero elemento (non solo sul pulsante)
+    div.addEventListener('click', fillCredentials);
+    
+    // Evento anche sul pulsante per compatibilità
+    const fillBtn = div.querySelector('.fill-btn');
+    fillBtn.addEventListener('click', fillCredentials);
 
     return div;
 }

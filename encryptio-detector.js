@@ -1,7 +1,135 @@
 /**
  * ENCRYPTIO - Content Script per encryptio.it
  * Rileva quando l'utente è loggato e comunica con l'estensione
+ * Intercetta i click sui link delle password nella dashboard per autofill automatico
  */
+
+// Intercetta i click sui link delle password nella dashboard
+document.addEventListener('click', async (e) => {
+    // Verifica se il click è su un link URL di una password nella dashboard
+    const link = e.target.closest('a[href^="http"]');
+    if (!link) return;
+    
+    // Verifica se siamo nella dashboard
+    if (!window.location.pathname.includes('/user/dashboard')) return;
+    
+    // Verifica se il link è dentro un password-item
+    const passwordItem = link.closest('.password-item');
+    if (!passwordItem) return;
+    
+    // Verifica se il link ha target="_blank" (link esterno)
+    if (link.target !== '_blank') return;
+    
+    // Verifica che l'URL non sia un link interno di encryptio.it
+    const url = link.href;
+    if (url.includes('encryptio.it')) return;
+    
+    console.log('[Encryptio Detector] Link password cliccato:', url);
+    
+    // Previeni il comportamento di default
+    e.preventDefault();
+    e.stopPropagation();
+    
+    try {
+        // Ottieni il token API
+        const token = await getAutoToken();
+        if (!token) {
+            console.error('[Encryptio Detector] Impossibile ottenere token API');
+            // Fallback: apri il link normalmente
+            window.open(url, '_blank');
+            return;
+        }
+        
+        // Recupera tutte le password dall'API
+        const vaultResponse = await fetch('https://www.encryptio.it/password/api/v1/vault', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            credentials: 'include'
+        });
+        
+        if (!vaultResponse.ok) {
+            console.error('[Encryptio Detector] Errore nel recupero del vault:', vaultResponse.status);
+            // Fallback: apri il link normalmente
+            window.open(url, '_blank');
+            return;
+        }
+        
+        const passwords = await vaultResponse.json();
+        console.log('[Encryptio Detector] Vault recuperato,', passwords.length, 'password trovate');
+        
+        // Normalizza l'URL per il confronto (rimuovi trailing slash, www, etc)
+        const normalizeUrl = (u) => {
+            if (!u) return '';
+            try {
+                const urlObj = new URL(u);
+                let normalized = urlObj.protocol + '//' + urlObj.hostname.replace(/^www\./, '') + urlObj.pathname;
+                if (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
+                return normalized.toLowerCase();
+            } catch {
+                return u.toLowerCase();
+            }
+        };
+        
+        const normalizedTargetUrl = normalizeUrl(url);
+        
+        // Trova la password corrispondente all'URL
+        let matchingPassword = null;
+        for (const pwd of passwords) {
+            if (pwd.url) {
+                const normalizedPwdUrl = normalizeUrl(pwd.url);
+                if (normalizedPwdUrl === normalizedTargetUrl || 
+                    normalizedPwdUrl.includes(normalizedTargetUrl) ||
+                    normalizedTargetUrl.includes(normalizedPwdUrl)) {
+                    matchingPassword = pwd;
+                    break;
+                }
+            }
+        }
+        
+        if (!matchingPassword) {
+            console.log('[Encryptio Detector] Nessuna password trovata per URL:', url);
+            // Fallback: apri il link normalmente
+            window.open(url, '_blank');
+            return;
+        }
+        
+        console.log('[Encryptio Detector] Password trovata per autofill:', matchingPassword.name || matchingPassword.username);
+        
+        // Salva le credenziali nello storage temporaneo con chiave basata sull'URL
+        const storageKey = `encryptio_autofill_${normalizedTargetUrl.replace(/[^a-z0-9]/g, '_')}`;
+        await chrome.storage.local.set({
+            [storageKey]: {
+                username: matchingPassword.username || '',
+                password: matchingPassword.password || '',
+                url: url,
+                timestamp: Date.now()
+            }
+        });
+        
+        console.log('[Encryptio Detector] Credenziali salvate nello storage:', storageKey);
+        
+        // Apri la nuova tab
+        chrome.runtime.sendMessage({
+            action: 'open_tab_with_autofill',
+            url: url,
+            storageKey: storageKey
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error('[Encryptio Detector] Errore apertura tab:', chrome.runtime.lastError);
+                // Fallback: apri il link normalmente
+                window.open(url, '_blank');
+            }
+        });
+        
+    } catch (error) {
+        console.error('[Encryptio Detector] Errore durante autofill automatico:', error);
+        // Fallback: apri il link normalmente
+        window.open(url, '_blank');
+    }
+}, true); // Usa capture phase per intercettare prima
 
 // Ascolta messaggi dall'estensione
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {

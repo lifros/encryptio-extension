@@ -55,6 +55,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
         });
         return true;
+    } else if (request.action === "open_tab_with_autofill") {
+        // Apri una nuova tab e prepara l'autofill
+        console.log('[Background] Apertura tab con autofill per:', request.url);
+        chrome.tabs.create({ url: request.url }, (tab) => {
+            if (chrome.runtime.lastError) {
+                console.error('[Background] Errore apertura tab:', chrome.runtime.lastError);
+                sendResponse({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+                console.log('[Background] Tab aperta con ID:', tab.id);
+                // Il content script nella nuova tab leggerà le credenziali dallo storage
+                sendResponse({ success: true, tabId: tab.id });
+            }
+        });
+        return true; // Risposta asincrona
     }
 });
 

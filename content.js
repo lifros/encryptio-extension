@@ -3,6 +3,89 @@
  * Gestisce l'interazione diretta con le pagine web
  */
 
+// Funzione per normalizzare l'URL (come in encryptio-detector.js)
+function normalizeUrl(u) {
+    if (!u) return '';
+    try {
+        const urlObj = new URL(u);
+        let normalized = urlObj.protocol + '//' + urlObj.hostname.replace(/^www\./, '') + urlObj.pathname;
+        if (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
+        return normalized.toLowerCase();
+    } catch {
+        return u.toLowerCase();
+    }
+}
+
+// Controlla se ci sono credenziali salvate per questa pagina e inseriscile automaticamente
+async function checkAndFillAutoCredentials() {
+    try {
+        const currentUrl = normalizeUrl(window.location.href);
+        console.log('[Encryptio] Controllo credenziali salvate per URL:', currentUrl);
+        
+        // Cerca tutte le chiavi di storage che iniziano con encryptio_autofill_
+        const allStorage = await chrome.storage.local.get(null);
+        const autofillKeys = Object.keys(allStorage).filter(key => key.startsWith('encryptio_autofill_'));
+        
+        for (const key of autofillKeys) {
+            const data = allStorage[key];
+            if (!data || !data.url) continue;
+            
+            const savedUrl = normalizeUrl(data.url);
+            
+            // Verifica se l'URL corrisponde (esatto o contiene)
+            if (savedUrl === currentUrl || 
+                savedUrl.includes(currentUrl) ||
+                currentUrl.includes(savedUrl)) {
+                console.log('[Encryptio] Credenziali trovate per autofill automatico');
+                
+                // Attendi che la pagina sia completamente caricata
+                if (document.readyState === 'loading') {
+                    await new Promise(resolve => {
+                        if (document.readyState === 'complete') {
+                            resolve();
+                        } else {
+                            window.addEventListener('load', resolve, { once: true });
+                        }
+                    });
+                }
+                
+                // Attendi un po' per assicurarsi che i campi siano renderizzati
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Inserisci le credenziali
+                const success = await fillLoginFields(data.username || '', data.password || '');
+                
+                if (success) {
+                    console.log('[Encryptio] Credenziali inserite automaticamente con successo');
+                    // Rimuovi le credenziali dallo storage dopo l'inserimento (per sicurezza)
+                    await chrome.storage.local.remove(key);
+                } else {
+                    console.log('[Encryptio] Campi login non trovati, riprovo tra 1 secondo...');
+                    // Riprova dopo 1 secondo (alcuni siti caricano i campi dinamicamente)
+                    setTimeout(async () => {
+                        const retrySuccess = await fillLoginFields(data.username || '', data.password || '');
+                        if (retrySuccess) {
+                            await chrome.storage.local.remove(key);
+                        }
+                    }, 1000);
+                }
+                
+                break; // Inserisci solo la prima corrispondenza
+            }
+        }
+    } catch (error) {
+        console.error('[Encryptio] Errore durante autofill automatico:', error);
+    }
+}
+
+// Esegui il controllo quando la pagina è pronta
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', checkAndFillAutoCredentials);
+} else {
+    // La pagina è già caricata
+    setTimeout(checkAndFillAutoCredentials, 500);
+}
+
 // 1. Ascolta i messaggi provenienti dal POPUP o dal BACKGROUND
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "fill_credentials") {
