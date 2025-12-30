@@ -37,6 +37,24 @@ document.addEventListener('DOMContentLoaded', async function() {
             filterVaultItems(query);
         });
     }
+    
+    // 5. Listener globale per pulsanti di retry (delegazione eventi)
+    document.addEventListener('click', (e) => {
+        if (e.target && e.target.classList.contains('retry-button')) {
+            e.preventDefault();
+            location.reload();
+        }
+    });
+    
+    // 6. Gestione errori immagini (fallback per favicon)
+    document.addEventListener('error', (e) => {
+        if (e.target && e.target.classList.contains('vault-favicon') && e.target.tagName === 'IMG') {
+            const fallback = e.target.getAttribute('data-fallback');
+            if (fallback && e.target.src !== fallback) {
+                e.target.src = fallback;
+            }
+        }
+    }, true); // Usa capture phase per intercettare prima
 });
 
 /**
@@ -456,7 +474,7 @@ function createVaultItemElement(item, isSuggestion = false) {
     const displayName = item.name || domain;
     
     div.innerHTML = `
-        <img src="https://www.google.com/s2/favicons?domain=${domain}" alt="" onerror="this.src='icon.png'">
+        <img src="https://www.google.com/s2/favicons?domain=${domain}" alt="" class="vault-favicon" data-fallback="icon.png">
         <div class="info">
             <span class="name">${escapeHtml(displayName)}</span>
             <span class="user">${escapeHtml(item.username || 'N/A')}</span>
