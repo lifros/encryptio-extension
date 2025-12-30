@@ -83,7 +83,7 @@ function checkLoginStatus() {
 async function getAutoToken() {
     try {
         console.log('Tentativo di ottenere token automatico...');
-        const response = await fetch('https://www.encryptio.it/api/v1/token/auto', {
+        const response = await fetch('https://www.encryptio.it/password/api/v1/token/auto', {
             method: 'POST',
             credentials: 'include', // Invia i cookie di sessione
             headers: {

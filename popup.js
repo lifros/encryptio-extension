@@ -273,7 +273,7 @@ async function loadVaultFromFlask() {
             return;
         }
 
-        const response = await fetch('https://www.encryptio.it/api/v1/vault', {
+        const response = await fetch('https://www.encryptio.it/password/api/v1/vault', {
             headers: { 
                 'Authorization': 'Bearer ' + token,
                 'Content-Type': 'application/json'
@@ -493,7 +493,7 @@ async function ensureAuthToken() {
     if (existingToken) {
         // Verifica rapida: prova a chiamare l'API
         try {
-            const testResponse = await fetch('https://www.encryptio.it/api/v1/vault', {
+            const testResponse = await fetch('https://www.encryptio.it/password/api/v1/vault', {
                 headers: { 
                     'Authorization': 'Bearer ' + existingToken,
                     'Content-Type': 'application/json'
@@ -538,7 +538,7 @@ async function ensureAuthToken() {
 async function getAutoToken() {
     // Prova prima direttamente l'API (i cookie potrebbero essere condivisi)
     try {
-        const directResponse = await fetch('https://www.encryptio.it/api/v1/token/auto', {
+        const directResponse = await fetch('https://www.encryptio.it/password/api/v1/token/auto', {
             method: 'POST',
             credentials: 'include', // Invia i cookie di sessione
             headers: {
