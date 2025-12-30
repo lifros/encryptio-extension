@@ -1,0 +1,102 @@
+:root {
+    --primary: #007bff;
+    --dark: #1a1a1a;
+    --light-gray: #f8f9fa;
+    --text: #333;
+}
+
+body {
+    width: 350px;
+    margin: 0;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background-color: white;
+    color: var(--text);
+}
+
+header {
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #eee;
+}
+
+.logo { height: 24px; }
+
+.status-badge {
+    font-size: 10px;
+    background: #e7f3ff;
+    color: var(--primary);
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-weight: bold;
+}
+
+.search-container { padding: 10px 15px; }
+
+input[type="text"] {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-sizing: border-box;
+    outline: none;
+}
+
+.section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: #888;
+    margin: 15px 15px 5px;
+    letter-spacing: 0.5px;
+}
+
+.vault-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 15px;
+    transition: background 0.2s;
+    cursor: pointer;
+}
+
+.vault-item:hover { background: var(--light-gray); }
+
+.vault-item img { width: 20px; margin-right: 12px; }
+
+.vault-item .info { flex-grow: 1; display: flex; flex-direction: column; }
+
+.vault-item .name { font-weight: 600; font-size: 14px; }
+
+.vault-item .user { font-size: 12px; color: #666; }
+
+.fill-btn {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.tabs {
+    display: flex;
+    border-top: 1px solid #eee;
+    background: var(--light-gray);
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 12px 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 12px;
+    color: #666;
+}
+
+.tab-btn.active {
+    color: var(--primary);
+    border-top: 2px solid var(--primary);
+    background: white;
+}

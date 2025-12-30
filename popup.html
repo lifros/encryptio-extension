@@ -1,17 +1,39 @@
 <!DOCTYPE html>
-<html>
+<html lang="it">
 <head>
-  <style>
-    body { width: 300px; padding: 15px; font-family: sans-serif; }
-    .btn { background: #007bff; color: white; border: none; padding: 10px; width: 100%; cursor: pointer; border-radius: 4px; }
-    .status { margin-bottom: 10px; font-size: 14px; }
-  </style>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h3>Encryptio</h3>
-  <div class="status" id="status">Verifica sessione...</div>
-  <button class="btn" id="open-vault">Apri il mio Vault</button>
+    <header>
+        <img src="logo.png" alt="Encryptio Logo" class="logo">
+        <span class="status-badge">Pro Protezione Attiva</span>
+    </header>
 
-  <script src="popup.js"></script>
+    <div class="search-container">
+        <input type="text" id="search" placeholder="Cerca nel tuo vault...">
+    </div>
+
+    <main id="content">
+        <div class="site-suggestion">
+            <p class="section-title">Suggerimenti per questo sito</p>
+            <div class="vault-item">
+                <img src="https://www.google.com/s2/favicons?domain=netflix.com" alt="">
+                <div class="info">
+                    <span class="name">Netflix</span>
+                    <span class="user">utente@email.it</span>
+                </div>
+                <button class="fill-btn">Inserisci</button>
+            </div>
+        </div>
+    </main>
+
+    <nav class="tabs">
+        <button class="tab-btn active" data-target="vault">🔑 Vault</button>
+        <button class="tab-btn" data-target="generator">🎲 Generatore</button>
+        <button class="tab-btn" data-target="tools">🛠️ Tool</button>
+    </nav>
+
+    <script src="popup.js"></script>
 </body>
 </html>
