@@ -273,6 +273,7 @@ async function loadVaultFromFlask() {
             return;
         }
 
+        console.log('Chiamata API vault con token:', token ? token.substring(0, 20) + '...' : 'NONE');
         const response = await fetch('https://www.encryptio.it/password/api/v1/vault', {
             headers: { 
                 'Authorization': 'Bearer ' + token,
@@ -280,7 +281,12 @@ async function loadVaultFromFlask() {
             }
         });
 
+        console.log('Risposta API vault:', response.status, response.statusText);
+
         if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Errore API vault:', response.status, errorText);
+            
             if (response.status === 401) {
                 // Token non valido o scaduto
                 await chrome.storage.local.remove(['auth_token']);
@@ -292,22 +298,25 @@ async function loadVaultFromFlask() {
                     </div>
                 `;
             } else {
-                throw new Error(`HTTP ${response.status}`);
+                throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
             }
             return;
         }
 
         const data = await response.json();
+        console.log('Dati vault ricevuti:', Array.isArray(data) ? `${data.length} elementi` : 'Non è un array', data);
         vaultData = Array.isArray(data) ? data : [];
         
         // Renderizza gli elementi ricevuti
         renderVaultItems(vaultData);
     } catch (error) {
         console.error('Error loading vault:', error);
+        const errorMessage = error.message || 'Errore sconosciuto';
         content.innerHTML = `
             <div style="padding: 20px; text-align: center;">
                 <p style="color: #dc3545; margin-bottom: 10px;">Errore di connessione</p>
-                <p style="color: #666; font-size: 12px; margin-bottom: 10px;">Impossibile caricare il vault. Verifica la connessione.</p>
+                <p style="color: #666; font-size: 12px; margin-bottom: 10px;">${errorMessage}</p>
+                <p style="color: #888; font-size: 11px; margin-bottom: 15px;">Controlla la console per maggiori dettagli (F12)</p>
                 <button class="fill-btn" onclick="location.reload()" style="margin-top: 10px;">Riprova</button>
             </div>
         `;
