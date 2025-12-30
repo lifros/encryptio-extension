@@ -100,3 +100,34 @@ input[type="text"] {
     border-top: 2px solid var(--primary);
     background: white;
 }
+
+.tab-btn:hover {
+    background: rgba(0, 123, 255, 0.05);
+}
+
+.fill-btn:hover {
+    background: #0056b3;
+    cursor: pointer;
+}
+
+.fill-btn:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.site-suggestion {
+    margin-bottom: 10px;
+}
+
+.vault-item img {
+    width: 20px;
+    height: 20px;
+    margin-right: 12px;
+    border-radius: 4px;
+}
+
+input[type="text"]:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
+}
