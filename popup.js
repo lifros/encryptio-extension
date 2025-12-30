@@ -255,9 +255,16 @@ async function loadVaultFromFlask() {
                             </ol>
                         </div>
                         <a href="https://www.encryptio.it/auth/login" target="_blank" style="display: inline-block; margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 6px; font-size: 12px;">Vai al Login</a>
-                        <button onclick="location.reload()" style="display: block; margin: 10px auto 0; padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">Riprova</button>
+                        <button class="retry-button" style="display: block; margin: 10px auto 0; padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">Riprova</button>
                     </div>
                 `;
+                // Aggiungi event listener per il pulsante
+                setTimeout(() => {
+                    const retryBtn = content.querySelector('.retry-button');
+                    if (retryBtn) {
+                        retryBtn.addEventListener('click', () => location.reload());
+                    }
+                }, 100);
                 return;
             }
             
@@ -267,9 +274,16 @@ async function loadVaultFromFlask() {
                     <p style="color: #dc3545; margin-bottom: 10px;">Autenticazione richiesta</p>
                     <p style="color: #666; font-size: 12px; margin-bottom: 15px;">Effettua il login su encryptio.it per continuare.</p>
                     <a href="https://www.encryptio.it/auth/login" target="_blank" style="display: inline-block; margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 6px; font-size: 12px;">Vai al Login</a>
-                    <button onclick="location.reload()" style="display: block; margin: 10px auto 0; padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">Riprova</button>
+                    <button class="retry-button" style="display: block; margin: 10px auto 0; padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 6px; font-size: 12px; cursor: pointer;">Riprova</button>
                 </div>
             `;
+            // Aggiungi event listener per il pulsante
+            setTimeout(() => {
+                const retryBtn = content.querySelector('.retry-button');
+                if (retryBtn) {
+                    retryBtn.addEventListener('click', () => location.reload());
+                }
+            }, 100);
             return;
         }
 
@@ -317,9 +331,16 @@ async function loadVaultFromFlask() {
                 <p style="color: #dc3545; margin-bottom: 10px;">Errore di connessione</p>
                 <p style="color: #666; font-size: 12px; margin-bottom: 10px;">${errorMessage}</p>
                 <p style="color: #888; font-size: 11px; margin-bottom: 15px;">Controlla la console per maggiori dettagli (F12)</p>
-                <button class="fill-btn" onclick="location.reload()" style="margin-top: 10px;">Riprova</button>
+                <button class="fill-btn retry-button" style="margin-top: 10px;">Riprova</button>
             </div>
         `;
+        // Aggiungi event listener per il pulsante
+        setTimeout(() => {
+            const retryBtn = content.querySelector('.retry-button');
+            if (retryBtn) {
+                retryBtn.addEventListener('click', () => location.reload());
+            }
+        }, 100);
     }
 }
 

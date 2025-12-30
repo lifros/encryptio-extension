@@ -16,7 +16,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // 2. Funzione per iniettare i dati nei campi
-function fillLoginFields(user, pass) {
+async function fillLoginFields(user, pass) {
   console.log('[Encryptio] Tentativo di inserire credenziali, username:', user ? user.substring(0, 3) + '...' : 'NONE');
   
   // Cerchiamo i campi password con selettori migliorati
@@ -104,24 +104,119 @@ function fillLoginFields(user, pass) {
   }
 
   try {
-      // Inseriamo la password
-      passwordField.value = pass;
-      passwordField.dispatchEvent(new Event('input', { bubbles: true }));
-      passwordField.dispatchEvent(new Event('change', { bubbles: true }));
-      passwordField.dispatchEvent(new Event('blur', { bubbles: true }));
-      console.log('[Encryptio] Password inserita');
-
+      // Funzione helper per impostare valore con tutti gli eventi necessari
+      function setFieldValue(field, value) {
+          if (!field || !value) return;
+          
+          try {
+              // Metodo 1: Focus e impostazione diretta
+              field.focus();
+              field.value = '';
+              field.value = value;
+              
+              // Metodo 2: Usa il setter nativo per bypassare eventuali proxy
+              try {
+                  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                      window.HTMLInputElement.prototype, 
+                      'value'
+                  )?.set;
+                  if (nativeInputValueSetter) {
+                      nativeInputValueSetter.call(field, value);
+                  }
+              } catch (e) {
+                  // Fallback se non disponibile
+                  field.value = value;
+              }
+              
+              // Metodo 3: Triggera eventi per React
+              const reactInputEvent = new Event('input', { bubbles: true, cancelable: true });
+              Object.defineProperty(reactInputEvent, 'target', { 
+                  value: field, 
+                  enumerable: true,
+                  writable: false
+              });
+              field.dispatchEvent(reactInputEvent);
+              
+              // Metodo 4: Triggera eventi standard
+              const events = ['input', 'change', 'keyup', 'keydown'];
+              events.forEach(eventType => {
+                  const evt = new Event(eventType, { bubbles: true, cancelable: true });
+                  field.dispatchEvent(evt);
+              });
+              
+              // Metodo 5: Per Vue.js e altri framework
+              const vueInputEvent = new InputEvent('input', {
+                  bubbles: true,
+                  cancelable: true,
+                  data: value
+              });
+              field.dispatchEvent(vueInputEvent);
+              
+              // Metodo 6: Verifica e riprova se necessario
+              if (field.value !== value) {
+                  console.log('[Encryptio] Valore non persistito, riprovo con metodo alternativo');
+                  field.setAttribute('value', value);
+                  field.value = value;
+                  field.dispatchEvent(new Event('input', { bubbles: true }));
+                  field.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+              
+          } catch (error) {
+              console.error('[Encryptio] Errore in setFieldValue:', error);
+              // Fallback semplice
+              field.value = value;
+              field.dispatchEvent(new Event('input', { bubbles: true }));
+              field.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+      }
+      
+      // Inseriamo prima l'username (se presente), poi la password
       if (userField && user) {
-          userField.value = user;
-          userField.dispatchEvent(new Event('input', { bubbles: true }));
-          userField.dispatchEvent(new Event('change', { bubbles: true }));
-          userField.dispatchEvent(new Event('blur', { bubbles: true }));
-          console.log('[Encryptio] Username inserito');
+          // Prova multipla per assicurarsi che il valore venga mantenuto
+          for (let attempt = 0; attempt < 3; attempt++) {
+              setFieldValue(userField, user);
+              await new Promise(resolve => setTimeout(resolve, 50));
+              
+              if (userField.value === user) {
+                  console.log('[Encryptio] Username inserito correttamente:', user.substring(0, 3) + '...');
+                  break;
+              } else if (attempt < 2) {
+                  console.log('[Encryptio] Tentativo', attempt + 1, 'fallito, riprovo...');
+              } else {
+                  console.warn('[Encryptio] Username non persistito dopo 3 tentativi');
+              }
+          }
       } else if (!userField) {
           console.warn('[Encryptio] Campo username non trovato, inserita solo la password');
       } else if (!user) {
           console.warn('[Encryptio] Username non fornito');
       }
+      
+      // Piccolo delay prima di inserire la password
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Inseriamo la password
+      setFieldValue(passwordField, pass);
+      console.log('[Encryptio] Password inserita');
+      
+      // Verifica finale che i valori siano stati effettivamente impostati
+      setTimeout(() => {
+          if (userField && user && userField.value !== user) {
+              console.warn('[Encryptio] Username perso dopo inserimento, valore attuale:', userField.value);
+              // Ultimo tentativo
+              userField.focus();
+              userField.value = user;
+              userField.dispatchEvent(new Event('input', { bubbles: true }));
+              userField.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          if (passwordField.value !== pass) {
+              console.warn('[Encryptio] Password persa dopo inserimento');
+              passwordField.focus();
+              passwordField.value = pass;
+              passwordField.dispatchEvent(new Event('input', { bubbles: true }));
+              passwordField.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+      }, 300);
       
       return true;
   } catch (error) {
