@@ -11,7 +11,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     // 1. RILEVAMENTO SITO ATTIVO (prima di tutto)
     await detectCurrentDomain();
 
-    // 2. INIZIALIZZAZIONE: Carica i dati dal Vault
+    // 2. VERIFICA E OTTIENI TOKEN AUTOMATICAMENTE
+    await ensureAuthToken();
+
+    // 3. INIZIALIZZAZIONE: Carica i dati dal Vault
     await loadVaultFromFlask();
 
     // 3. GESTIONE TAB
@@ -224,10 +227,24 @@ async function loadVaultFromFlask() {
         const token = await getSavedToken();
         
         if (!token) {
+            // Prova ancora una volta a ottenere il token automaticamente
+            try {
+                const autoToken = await getAutoToken();
+                if (autoToken) {
+                    await chrome.storage.local.set({ auth_token: autoToken });
+                    token = autoToken;
+                    // Ricarica i dati
+                    return await loadVaultFromFlask();
+                }
+            } catch (error) {
+                // Continua con il messaggio di errore
+            }
+            
             content.innerHTML = `
                 <div style="padding: 20px; text-align: center;">
                     <p style="color: #dc3545; margin-bottom: 10px;">Autenticazione richiesta</p>
-                    <p style="color: #666; font-size: 12px;">Effettua il login su encryptio.it per continuare.</p>
+                    <p style="color: #666; font-size: 12px; margin-bottom: 15px;">Effettua il login su encryptio.it per continuare.</p>
+                    <a href="https://www.encryptio.it/auth/login" target="_blank" style="display: inline-block; margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 6px; font-size: 12px;">Vai al Login</a>
                 </div>
             `;
             return;
@@ -242,10 +259,13 @@ async function loadVaultFromFlask() {
 
         if (!response.ok) {
             if (response.status === 401) {
+                // Token non valido o scaduto
+                await chrome.storage.local.remove(['auth_token']);
                 content.innerHTML = `
                     <div style="padding: 20px; text-align: center;">
-                        <p style="color: #dc3545; margin-bottom: 10px;">Sessione scaduta</p>
-                        <p style="color: #666; font-size: 12px;">Effettua nuovamente il login su encryptio.it</p>
+                        <p style="color: #dc3545; margin-bottom: 10px;">Token scaduto o non valido</p>
+                        <p style="color: #666; font-size: 12px; margin-bottom: 15px;">Genera un nuovo token API su encryptio.it</p>
+                        <a href="https://www.encryptio.it/user/settings" target="_blank" style="color: #007bff; text-decoration: underline; font-size: 12px;">Vai alle impostazioni</a>
                     </div>
                 `;
             } else {
@@ -264,7 +284,7 @@ async function loadVaultFromFlask() {
         content.innerHTML = `
             <div style="padding: 20px; text-align: center;">
                 <p style="color: #dc3545; margin-bottom: 10px;">Errore di connessione</p>
-                <p style="color: #666; font-size: 12px;">Impossibile caricare il vault. Verifica la connessione.</p>
+                <p style="color: #666; font-size: 12px; margin-bottom: 10px;">Impossibile caricare il vault. Verifica la connessione.</p>
                 <button class="fill-btn" onclick="location.reload()" style="margin-top: 10px;">Riprova</button>
             </div>
         `;
@@ -285,10 +305,10 @@ function renderVaultItems(data) {
 
     // Ordina per rilevanza: elementi del dominio corrente in alto
     const sortedData = [...data].sort((a, b) => {
-        const aDomain = extractDomain(a.domain || a.name || '');
-        const bDomain = extractDomain(b.domain || b.name || '');
-        const aMatch = currentDomain && aDomain.includes(currentDomain);
-        const bMatch = currentDomain && bDomain.includes(currentDomain);
+        const aDomain = extractDomain(a.domain || a.url || a.name || '');
+        const bDomain = extractDomain(b.domain || b.url || b.name || '');
+        const aMatch = currentDomain && aDomain && aDomain.includes(currentDomain);
+        const bMatch = currentDomain && bDomain && bDomain.includes(currentDomain);
         
         if (aMatch && !bMatch) return -1;
         if (!aMatch && bMatch) return 1;
@@ -320,8 +340,8 @@ function renderVaultItems(data) {
                 content.appendChild(allSection);
 
                 sortedData.filter(item => {
-                    const itemDomain = extractDomain(item.domain || item.name || '');
-                    return !itemDomain.includes(currentDomain);
+                    const itemDomain = extractDomain(item.domain || item.url || item.name || '');
+                    return !itemDomain || !itemDomain.includes(currentDomain);
                 }).forEach(item => {
                     allSection.appendChild(createVaultItemElement(item, false));
                 });
@@ -341,13 +361,15 @@ function renderVaultItems(data) {
 }
 
 /**
- * Estrae il dominio da una stringa
+ * Estrae il dominio da una stringa o URL
  */
 function extractDomain(str) {
+    if (!str) return '';
     try {
         if (str.startsWith('http://') || str.startsWith('https://')) {
             return new URL(str).hostname.replace('www.', '').toLowerCase();
         }
+        // Se è già un dominio, rimuovi www.
         return str.toLowerCase().replace('www.', '');
     } catch {
         return str.toLowerCase();
@@ -364,7 +386,20 @@ function createVaultItemElement(item, isSuggestion = false) {
         div.style.background = '#f0f7ff';
     }
     
-    const domain = item.domain || item.name || 'example.com';
+    // Usa domain se disponibile, altrimenti estrai da URL o usa name
+    let domain = item.domain;
+    if (!domain && item.url) {
+        try {
+            const url = new URL(item.url);
+            domain = url.hostname.replace('www.', '');
+        } catch (e) {
+            domain = item.name || 'example.com';
+        }
+    }
+    if (!domain) {
+        domain = item.name || 'example.com';
+    }
+    
     const displayName = item.name || domain;
     
     div.innerHTML = `
@@ -383,15 +418,16 @@ function createVaultItemElement(item, isSuggestion = false) {
         fillBtn.textContent = '...';
         
         try {
-            // Decrittografa la password se è criptata
+            // Le password dall'API sono già decrittate lato server
             let password = item.password;
             
-            if (item.encrypted_password || (item.password && item.password.includes(':'))) {
-                // Password criptata, decrittografa
+            // Se per qualche motivo la password è ancora criptata (formato legacy)
+            if (item.encrypted_password || (password && password.includes(':') && password.split(':').length === 3)) {
+                // Password criptata, decrittografa localmente
                 const masterPassword = await getMasterPassword();
                 if (masterPassword) {
                     password = await decryptPassword(
-                        item.encrypted_password || item.password,
+                        item.encrypted_password || password,
                         masterPassword
                     );
                 } else {
@@ -402,7 +438,7 @@ function createVaultItemElement(item, isSuggestion = false) {
                 }
             }
             
-            await sendToContentScript(item.username, password);
+            await sendToContentScript(item.username || '', password || '');
         } catch (error) {
             console.error('Error decrypting/filling:', error);
             showNotification('Errore durante l\'inserimento', 'error');
@@ -422,6 +458,73 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+/**
+ * Verifica e ottiene automaticamente un token API se necessario
+ */
+async function ensureAuthToken() {
+    const existingToken = await getSavedToken();
+    
+    // Se c'è già un token, verifica che sia valido
+    if (existingToken) {
+        // Verifica rapida: prova a chiamare l'API
+        try {
+            const testResponse = await fetch('https://www.encryptio.it/api/v1/vault', {
+                headers: { 
+                    'Authorization': 'Bearer ' + existingToken,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (testResponse.ok) {
+                // Token valido, non serve fare nulla
+                return;
+            }
+            
+            // Token non valido, rimuovilo
+            if (testResponse.status === 401) {
+                await chrome.storage.local.remove(['auth_token']);
+            }
+        } catch (error) {
+            // Errore di rete, mantieni il token e riprova dopo
+            console.log('Network error checking token, will retry later');
+            return;
+        }
+    }
+    
+    // Non c'è token valido, prova a ottenerlo automaticamente
+    try {
+        const token = await getAutoToken();
+        if (token) {
+            await chrome.storage.local.set({ auth_token: token });
+            console.log('Token API ottenuto automaticamente');
+        }
+    } catch (error) {
+        console.log('Impossibile ottenere token automaticamente:', error.message);
+        // Non mostrare errore all'utente, sarà gestito in loadVaultFromFlask
+    }
+}
+
+/**
+ * Ottiene automaticamente un token API se l'utente è loggato su encryptio.it
+ */
+async function getAutoToken() {
+    return new Promise((resolve, reject) => {
+        // Usa il background script per comunicare con encryptio.it
+        chrome.runtime.sendMessage({ action: "get_auto_token" }, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error('Errore di comunicazione con l\'estensione'));
+                return;
+            }
+            
+            if (response && response.success && response.token) {
+                resolve(response.token);
+            } else {
+                reject(new Error(response?.error || 'Token non ottenuto'));
+            }
+        });
+    });
 }
 
 /**

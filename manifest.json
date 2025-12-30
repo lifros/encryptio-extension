@@ -18,8 +18,16 @@
       {
         "matches": ["<all_urls>"],
         "js": ["content.js"]
+      },
+      {
+        "matches": ["https://www.encryptio.it/*", "https://encryptio.it/*"],
+        "js": ["encryptio-detector.js"],
+        "run_at": "document_idle"
       }
     ],
+    "background": {
+      "service_worker": "background.js"
+    },
     "icons": {
       "48": "icon.png"
     }
