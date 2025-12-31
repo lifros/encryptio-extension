@@ -30,11 +30,35 @@ document.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
     
+    // Mostra feedback visivo sul link (cambia colore o aggiungi indicatore)
+    const originalText = link.textContent;
+    const originalColor = link.style.color;
+    link.style.color = '#007bff';
+    link.style.opacity = '0.7';
+    link.textContent = '⏳ Caricamento...';
+    
     try {
+        // Notifica inizio elaborazione
+        chrome.runtime.sendMessage({
+            action: 'show_notification',
+            type: 'info',
+            title: 'Encryptio',
+            message: 'Ricerca credenziali in corso...'
+        });
+        
         // Ottieni il token API
         const token = await getAutoToken();
         if (!token) {
             console.error('[Encryptio Detector] Impossibile ottenere token API');
+            link.style.color = originalColor;
+            link.style.opacity = '1';
+            link.textContent = originalText;
+            chrome.runtime.sendMessage({
+                action: 'show_notification',
+                type: 'error',
+                title: 'Encryptio',
+                message: 'Errore: impossibile ottenere token API'
+            });
             // Fallback: apri il link normalmente
             window.open(url, '_blank');
             return;
@@ -52,6 +76,15 @@ document.addEventListener('click', async (e) => {
         
         if (!vaultResponse.ok) {
             console.error('[Encryptio Detector] Errore nel recupero del vault:', vaultResponse.status);
+            link.style.color = originalColor;
+            link.style.opacity = '1';
+            link.textContent = originalText;
+            chrome.runtime.sendMessage({
+                action: 'show_notification',
+                type: 'error',
+                title: 'Encryptio',
+                message: 'Errore nel recupero del vault'
+            });
             // Fallback: apri il link normalmente
             window.open(url, '_blank');
             return;
@@ -91,6 +124,15 @@ document.addEventListener('click', async (e) => {
         
         if (!matchingPassword) {
             console.log('[Encryptio Detector] Nessuna password trovata per URL:', url);
+            link.style.color = originalColor;
+            link.style.opacity = '1';
+            link.textContent = originalText;
+            chrome.runtime.sendMessage({
+                action: 'show_notification',
+                type: 'warning',
+                title: 'Encryptio',
+                message: 'Nessuna password trovata per questo sito'
+            });
             // Fallback: apri il link normalmente
             window.open(url, '_blank');
             return;
@@ -105,20 +147,33 @@ document.addEventListener('click', async (e) => {
                 username: matchingPassword.username || '',
                 password: matchingPassword.password || '',
                 url: url,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                passwordName: matchingPassword.name || matchingPassword.username || 'Password'
             }
         });
         
         console.log('[Encryptio Detector] Credenziali salvate nello storage:', storageKey);
         
+        // Ripristina il link
+        link.style.color = originalColor;
+        link.style.opacity = '1';
+        link.textContent = originalText;
+        
         // Apri la nuova tab
         chrome.runtime.sendMessage({
             action: 'open_tab_with_autofill',
             url: url,
-            storageKey: storageKey
+            storageKey: storageKey,
+            passwordName: matchingPassword.name || matchingPassword.username || 'Password'
         }, (response) => {
             if (chrome.runtime.lastError) {
                 console.error('[Encryptio Detector] Errore apertura tab:', chrome.runtime.lastError);
+                chrome.runtime.sendMessage({
+                    action: 'show_notification',
+                    type: 'error',
+                    title: 'Encryptio',
+                    message: 'Errore nell\'apertura della nuova tab'
+                });
                 // Fallback: apri il link normalmente
                 window.open(url, '_blank');
             }
@@ -126,6 +181,15 @@ document.addEventListener('click', async (e) => {
         
     } catch (error) {
         console.error('[Encryptio Detector] Errore durante autofill automatico:', error);
+        link.style.color = originalColor;
+        link.style.opacity = '1';
+        link.textContent = originalText;
+        chrome.runtime.sendMessage({
+            action: 'show_notification',
+            type: 'error',
+            title: 'Encryptio',
+            message: 'Errore durante l\'elaborazione: ' + error.message
+        });
         // Fallback: apri il link normalmente
         window.open(url, '_blank');
     }

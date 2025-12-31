@@ -69,6 +69,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             }
         });
         return true; // Risposta asincrona
+    } else if (request.action === "show_notification") {
+        // Mostra una notifica del browser
+        chrome.notifications.create({
+            type: 'basic',
+            iconUrl: 'icon.png',
+            title: request.title || 'Encryptio',
+            message: request.message || '',
+            priority: request.type === 'error' ? 2 : (request.type === 'warning' ? 1 : 0)
+        }, (notificationId) => {
+            if (chrome.runtime.lastError) {
+                console.error('[Background] Errore creazione notifica:', chrome.runtime.lastError);
+            } else {
+                console.log('[Background] Notifica creata:', notificationId);
+                // Rimuovi la notifica dopo 5 secondi
+                setTimeout(() => {
+                    chrome.notifications.clear(notificationId);
+                }, 5000);
+            }
+        });
+        sendResponse({ success: true });
     }
 });
 

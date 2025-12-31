@@ -16,6 +16,96 @@ function normalizeUrl(u) {
     }
 }
 
+// Funzione per creare/mostrare overlay di stato
+function showStatusOverlay(message, type = 'info') {
+    // Rimuovi overlay esistente se presente
+    const existingOverlay = document.getElementById('encryptio-status-overlay');
+    if (existingOverlay) {
+        existingOverlay.remove();
+    }
+    
+    // Crea nuovo overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'encryptio-status-overlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: ${type === 'success' ? '#28a745' : type === 'error' ? '#dc3545' : type === 'warning' ? '#ffc107' : '#007bff'};
+        color: white;
+        padding: 15px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        z-index: 999999;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        font-size: 14px;
+        font-weight: 500;
+        max-width: 350px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        animation: slideIn 0.3s ease-out;
+    `;
+    
+    const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : type === 'warning' ? '⚠' : '⏳';
+    overlay.innerHTML = `
+        <span style="font-size: 18px;">${icon}</span>
+        <span>${message}</span>
+    `;
+    
+    // Aggiungi animazione CSS
+    if (!document.getElementById('encryptio-overlay-styles')) {
+        const style = document.createElement('style');
+        style.id = 'encryptio-overlay-styles';
+        style.textContent = `
+            @keyframes slideIn {
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+            @keyframes slideOut {
+                from {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+                to {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    document.body.appendChild(overlay);
+    
+    // Auto-rimuovi dopo alcuni secondi (tranne per 'info' che rimane fino a quando non viene sostituito)
+    if (type !== 'info') {
+        setTimeout(() => {
+            if (overlay.parentNode) {
+                overlay.style.animation = 'slideOut 0.3s ease-out';
+                setTimeout(() => overlay.remove(), 300);
+            }
+        }, type === 'success' ? 3000 : 5000);
+    }
+    
+    return overlay;
+}
+
+// Funzione per rimuovere overlay
+function removeStatusOverlay() {
+    const overlay = document.getElementById('encryptio-status-overlay');
+    if (overlay) {
+        overlay.style.animation = 'slideOut 0.3s ease-out';
+        setTimeout(() => overlay.remove(), 300);
+    }
+}
+
 // Controlla se ci sono credenziali salvate per questa pagina e inseriscile automaticamente
 async function checkAndFillAutoCredentials() {
     try {
@@ -38,6 +128,10 @@ async function checkAndFillAutoCredentials() {
                 currentUrl.includes(savedUrl)) {
                 console.log('[Encryptio] Credenziali trovate per autofill automatico');
                 
+                // Mostra overlay di ricerca
+                const passwordName = data.passwordName || 'Password';
+                showStatusOverlay(`Encryptio: ricerca credenziali per ${passwordName}...`, 'info');
+                
                 // Attendi che la pagina sia completamente caricata
                 if (document.readyState === 'loading') {
                     await new Promise(resolve => {
@@ -57,6 +151,8 @@ async function checkAndFillAutoCredentials() {
                 
                 if (success) {
                     console.log('[Encryptio] Credenziali inserite automaticamente con successo');
+                    removeStatusOverlay();
+                    showStatusOverlay('✓ Credenziali inserite con successo!', 'success');
                     // Rimuovi le credenziali dallo storage dopo l'inserimento (per sicurezza)
                     await chrome.storage.local.remove(key);
                 } else {
@@ -65,6 +161,13 @@ async function checkAndFillAutoCredentials() {
                     setTimeout(async () => {
                         const retrySuccess = await fillLoginFields(data.username || '', data.password || '');
                         if (retrySuccess) {
+                            removeStatusOverlay();
+                            showStatusOverlay('✓ Credenziali inserite con successo!', 'success');
+                            await chrome.storage.local.remove(key);
+                        } else {
+                            removeStatusOverlay();
+                            showStatusOverlay('⚠ Campi login non trovati su questa pagina', 'warning');
+                            // Rimuovi comunque le credenziali dopo il tentativo
                             await chrome.storage.local.remove(key);
                         }
                     }, 1000);
@@ -75,6 +178,8 @@ async function checkAndFillAutoCredentials() {
         }
     } catch (error) {
         console.error('[Encryptio] Errore durante autofill automatico:', error);
+        removeStatusOverlay();
+        showStatusOverlay('✕ Errore durante l\'inserimento delle credenziali', 'error');
     }
 }
 
