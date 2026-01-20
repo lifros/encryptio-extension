@@ -306,12 +306,19 @@ async function loadVaultFromFlask() {
         }
 
         console.log('Chiamata API vault con token:', token ? token.substring(0, 20) + '...' : 'NONE');
-        const response = await fetch('https://www.encryptio.it/password/api/v1/vault', {
-            headers: { 
-                'Authorization': 'Bearer ' + token,
-                'Content-Type': 'application/json'
-            }
-        });
+        
+        // Aggiungi timeout alla chiamata API
+        const response = await Promise.race([
+            fetch('https://www.encryptio.it/password/api/v1/vault', {
+                headers: { 
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json'
+                }
+            }),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Timeout connessione API')), 15000)
+            )
+        ]);
 
         console.log('Risposta API vault:', response.status, response.statusText);
 
@@ -517,7 +524,19 @@ function createVaultItemElement(item, isSuggestion = false) {
                 }
             }
             
-            await sendToContentScript(item.username || '', password || '');
+            // Valida le credenziali prima di inviarle
+            const username = (item.username || '').trim();
+            const passwordValue = (password || '').trim();
+            
+            if (!passwordValue) {
+                showNotification('Errore: password vuota', 'error');
+                fillBtn.disabled = false;
+                fillBtn.textContent = originalText;
+                div.style.opacity = '1';
+                return;
+            }
+            
+            await sendToContentScript(username, passwordValue);
         } catch (error) {
             console.error('Error decrypting/filling:', error);
             showNotification('Errore durante l\'inserimento', 'error');
@@ -584,7 +603,12 @@ async function ensureAuthToken() {
     // Non c'è token valido, prova a ottenerlo automaticamente
     console.log('Tentativo di ottenere nuovo token...');
     try {
-        const token = await getAutoToken();
+        const token = await Promise.race([
+            getAutoToken(),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Timeout ottenimento token')), 10000)
+            )
+        ]);
         if (token) {
             await chrome.storage.local.set({ auth_token: token });
             console.log('Token API ottenuto automaticamente e salvato');

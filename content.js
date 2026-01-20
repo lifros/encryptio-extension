@@ -3,17 +3,31 @@
  * Gestisce l'interazione diretta con le pagine web
  */
 
-// Funzione per normalizzare l'URL (come in encryptio-detector.js)
-function normalizeUrl(u) {
-    if (!u) return '';
-    try {
-        const urlObj = new URL(u);
-        let normalized = urlObj.protocol + '//' + urlObj.hostname.replace(/^www\./, '') + urlObj.pathname;
-        if (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
-        return normalized.toLowerCase();
-    } catch {
-        return u.toLowerCase();
-    }
+// Carica funzioni utility (se disponibili, altrimenti usa fallback)
+let normalizeUrl, urlsMatch, cleanupExpiredCredentials;
+if (typeof window.normalizeUrl === 'function') {
+    normalizeUrl = window.normalizeUrl;
+    urlsMatch = window.urlsMatch;
+    cleanupExpiredCredentials = window.cleanupExpiredCredentials;
+} else {
+    // Fallback inline se utils.js non è caricato
+    normalizeUrl = function(u) {
+        if (!u) return '';
+        try {
+            const urlObj = new URL(u);
+            let normalized = urlObj.protocol + '//' + urlObj.hostname.replace(/^www\./, '') + urlObj.pathname;
+            if (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
+            return normalized.toLowerCase();
+        } catch {
+            return u.toLowerCase();
+        }
+    };
+    urlsMatch = function(url1, url2) {
+        const n1 = normalizeUrl(url1);
+        const n2 = normalizeUrl(url2);
+        return n1 === n2 || n1.includes(n2) || n2.includes(n1);
+    };
+    cleanupExpiredCredentials = async function() {};
 }
 
 // Funzione per creare/mostrare overlay di stato
@@ -122,10 +136,8 @@ async function checkAndFillAutoCredentials() {
             
             const savedUrl = normalizeUrl(data.url);
             
-            // Verifica se l'URL corrisponde (esatto o contiene)
-            if (savedUrl === currentUrl || 
-                savedUrl.includes(currentUrl) ||
-                currentUrl.includes(savedUrl)) {
+            // Verifica se l'URL corrisponde usando funzione migliorata
+            if (urlsMatch(savedUrl, currentUrl)) {
                 console.log('[Encryptio] Credenziali trovate per autofill automatico');
                 
                 // Mostra overlay di ricerca
@@ -164,12 +176,12 @@ async function checkAndFillAutoCredentials() {
                             removeStatusOverlay();
                             showStatusOverlay('✓ Credenziali inserite con successo!', 'success');
                             await chrome.storage.local.remove(key);
-                        } else {
-                            removeStatusOverlay();
-                            showStatusOverlay('⚠ Campi login non trovati su questa pagina', 'warning');
-                            // Rimuovi comunque le credenziali dopo il tentativo
-                            await chrome.storage.local.remove(key);
-                        }
+                } else {
+                    removeStatusOverlay();
+                    showStatusOverlay('⚠ Campi login non trovati su questa pagina', 'warning');
+                    // Rimuovi comunque le credenziali dopo il tentativo (evita accumulo)
+                    await chrome.storage.local.remove(key);
+                }
                     }, 1000);
                 }
                 
@@ -182,6 +194,9 @@ async function checkAndFillAutoCredentials() {
         showStatusOverlay('✕ Errore durante l\'inserimento delle credenziali', 'error');
     }
 }
+
+// Pulisci credenziali scadute all'avvio
+cleanupExpiredCredentials();
 
 // Esegui il controllo quando la pagina è pronta
 if (document.readyState === 'loading') {
@@ -205,7 +220,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // 2. Funzione per iniettare i dati nei campi
 async function fillLoginFields(user, pass) {
-  console.log('[Encryptio] Tentativo di inserire credenziali, username:', user ? user.substring(0, 3) + '...' : 'NONE');
+  // Valida input
+  if (!pass || pass.trim() === '') {
+    console.warn('[Encryptio] Password vuota, impossibile inserire');
+    return false;
+  }
+  
+  // Sanitizza input (rimuovi caratteri pericolosi ma mantieni quelli validi per password)
+  const sanitizedUser = (user || '').trim();
+  const sanitizedPass = pass.trim();
+  
+  console.log('[Encryptio] Tentativo di inserire credenziali, username:', sanitizedUser ? sanitizedUser.substring(0, 3) + '...' : 'NONE');
   
   // Cerchiamo i campi password con selettori migliorati
   const passwordField = document.querySelector('input[type="password"]');
@@ -359,14 +384,14 @@ async function fillLoginFields(user, pass) {
       }
       
       // Inseriamo prima l'username (se presente), poi la password
-      if (userField && user) {
+      if (userField && sanitizedUser) {
           // Prova multipla per assicurarsi che il valore venga mantenuto
           for (let attempt = 0; attempt < 3; attempt++) {
-              setFieldValue(userField, user);
+              setFieldValue(userField, sanitizedUser);
               await new Promise(resolve => setTimeout(resolve, 50));
               
-              if (userField.value === user) {
-                  console.log('[Encryptio] Username inserito correttamente:', user.substring(0, 3) + '...');
+              if (userField.value === sanitizedUser) {
+                  console.log('[Encryptio] Username inserito correttamente:', sanitizedUser.substring(0, 3) + '...');
                   break;
               } else if (attempt < 2) {
                   console.log('[Encryptio] Tentativo', attempt + 1, 'fallito, riprovo...');
@@ -376,7 +401,7 @@ async function fillLoginFields(user, pass) {
           }
       } else if (!userField) {
           console.warn('[Encryptio] Campo username non trovato, inserita solo la password');
-      } else if (!user) {
+      } else if (!sanitizedUser) {
           console.warn('[Encryptio] Username non fornito');
       }
       
@@ -384,23 +409,23 @@ async function fillLoginFields(user, pass) {
       await new Promise(resolve => setTimeout(resolve, 100));
       
       // Inseriamo la password
-      setFieldValue(passwordField, pass);
+      setFieldValue(passwordField, sanitizedPass);
       console.log('[Encryptio] Password inserita');
       
       // Verifica finale che i valori siano stati effettivamente impostati
       setTimeout(() => {
-          if (userField && user && userField.value !== user) {
+          if (userField && sanitizedUser && userField.value !== sanitizedUser) {
               console.warn('[Encryptio] Username perso dopo inserimento, valore attuale:', userField.value);
               // Ultimo tentativo
               userField.focus();
-              userField.value = user;
+              userField.value = sanitizedUser;
               userField.dispatchEvent(new Event('input', { bubbles: true }));
               userField.dispatchEvent(new Event('change', { bubbles: true }));
           }
-          if (passwordField.value !== pass) {
+          if (passwordField.value !== sanitizedPass) {
               console.warn('[Encryptio] Password persa dopo inserimento');
               passwordField.focus();
-              passwordField.value = pass;
+              passwordField.value = sanitizedPass;
               passwordField.dispatchEvent(new Event('input', { bubbles: true }));
               passwordField.dispatchEvent(new Event('change', { bubbles: true }));
           }

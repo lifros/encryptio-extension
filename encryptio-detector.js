@@ -46,8 +46,20 @@ document.addEventListener('click', async (e) => {
             message: 'Ricerca credenziali in corso...'
         });
         
-        // Ottieni il token API
-        const token = await getAutoToken();
+        // Ottieni il token API con timeout
+        let token;
+        try {
+            token = await Promise.race([
+                getAutoToken(),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Timeout ottenimento token')), 10000)
+                )
+            ]);
+        } catch (error) {
+            console.error('[Encryptio Detector] Errore o timeout ottenimento token:', error);
+            token = null;
+        }
+        
         if (!token) {
             console.error('[Encryptio Detector] Impossibile ottenere token API');
             link.style.color = originalColor;
@@ -64,15 +76,20 @@ document.addEventListener('click', async (e) => {
             return;
         }
         
-        // Recupera tutte le password dall'API
-        const vaultResponse = await fetch('https://www.encryptio.it/password/api/v1/vault', {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            credentials: 'include'
-        });
+        // Recupera tutte le password dall'API con timeout
+        const vaultResponse = await Promise.race([
+            fetch('https://www.encryptio.it/password/api/v1/vault', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include'
+            }),
+            new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Timeout recupero vault')), 15000)
+            )
+        ]);
         
         if (!vaultResponse.ok) {
             console.error('[Encryptio Detector] Errore nel recupero del vault:', vaultResponse.status);
@@ -93,7 +110,7 @@ document.addEventListener('click', async (e) => {
         const passwords = await vaultResponse.json();
         console.log('[Encryptio Detector] Vault recuperato,', passwords.length, 'password trovate');
         
-        // Normalizza l'URL per il confronto (rimuovi trailing slash, www, etc)
+        // Funzione per normalizzare URL (inline per questo script)
         const normalizeUrl = (u) => {
             if (!u) return '';
             try {
@@ -106,21 +123,62 @@ document.addEventListener('click', async (e) => {
             }
         };
         
-        const normalizedTargetUrl = normalizeUrl(url);
+        // Funzione migliorata per matching URL
+        const urlsMatch = (url1, url2) => {
+            if (!url1 || !url2) return false;
+            const n1 = normalizeUrl(url1);
+            const n2 = normalizeUrl(url2);
+            if (n1 === n2) return true;
+            
+            // Estrai domini base
+            const extractDomain = (u) => {
+                try {
+                    return new URL(u).hostname.replace(/^www\./, '').toLowerCase();
+                } catch {
+                    return u.toLowerCase();
+                }
+            };
+            
+            const domain1 = extractDomain(url1);
+            const domain2 = extractDomain(url2);
+            
+            // Se i domini corrispondono, considera un match
+            if (domain1 === domain2) return true;
+            
+            // Controlla se un URL contiene l'altro (per gestire path diversi)
+            if (n1.includes(n2) || n2.includes(n1)) {
+                const parts1 = n1.split('/');
+                const parts2 = n2.split('/');
+                if (parts1[0] === parts2[0] && parts1[1] === parts2[1]) {
+                    return true;
+                }
+            }
+            
+            return false;
+        };
         
-        // Trova la password corrispondente all'URL
+        // Trova la password corrispondente all'URL (migliorato per gestire più password)
         let matchingPassword = null;
+        let exactMatch = null;
+        let domainMatch = null;
+        
         for (const pwd of passwords) {
-            if (pwd.url) {
-                const normalizedPwdUrl = normalizeUrl(pwd.url);
-                if (normalizedPwdUrl === normalizedTargetUrl || 
-                    normalizedPwdUrl.includes(normalizedTargetUrl) ||
-                    normalizedTargetUrl.includes(normalizedPwdUrl)) {
-                    matchingPassword = pwd;
-                    break;
+            if (!pwd.url) continue;
+            
+            // Match esatto ha priorità
+            if (!exactMatch && urlsMatch(pwd.url, url)) {
+                const normalizedPwd = normalizeUrl(pwd.url);
+                const normalizedTarget = normalizeUrl(url);
+                if (normalizedPwd === normalizedTarget) {
+                    exactMatch = pwd;
+                } else {
+                    // Match per dominio
+                    domainMatch = pwd;
                 }
             }
         }
+        
+        matchingPassword = exactMatch || domainMatch;
         
         if (!matchingPassword) {
             console.log('[Encryptio Detector] Nessuna password trovata per URL:', url);
@@ -140,15 +198,31 @@ document.addEventListener('click', async (e) => {
         
         console.log('[Encryptio Detector] Password trovata per autofill:', matchingPassword.name || matchingPassword.username);
         
+        // Valida le credenziali prima di salvarle
+        if (!matchingPassword.password || matchingPassword.password.trim() === '') {
+            console.warn('[Encryptio Detector] Password vuota per:', matchingPassword.name);
+            link.style.color = originalColor;
+            link.style.opacity = '1';
+            link.textContent = originalText;
+            chrome.runtime.sendMessage({
+                action: 'show_notification',
+                type: 'warning',
+                title: 'Encryptio',
+                message: 'Password vuota per questo sito'
+            });
+            window.open(url, '_blank');
+            return;
+        }
+        
         // Salva le credenziali nello storage temporaneo con chiave basata sull'URL
-        const storageKey = `encryptio_autofill_${normalizedTargetUrl.replace(/[^a-z0-9]/g, '_')}`;
+        const storageKey = `encryptio_autofill_${normalizedTargetUrl.replace(/[^a-z0-9]/g, '_').substring(0, 100)}`;
         await chrome.storage.local.set({
             [storageKey]: {
-                username: matchingPassword.username || '',
-                password: matchingPassword.password || '',
+                username: (matchingPassword.username || '').trim(),
+                password: (matchingPassword.password || '').trim(),
                 url: url,
                 timestamp: Date.now(),
-                passwordName: matchingPassword.name || matchingPassword.username || 'Password'
+                passwordName: (matchingPassword.name || matchingPassword.username || 'Password').trim()
             }
         });
         

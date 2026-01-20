@@ -3,6 +3,40 @@
  * Gestisce la comunicazione tra content scripts e popup
  */
 
+// Pulizia periodica delle credenziali scadute dallo storage
+async function cleanupExpiredCredentials() {
+    try {
+        const allStorage = await chrome.storage.local.get(null);
+        const autofillKeys = Object.keys(allStorage).filter(key => key.startsWith('encryptio_autofill_'));
+        const now = Date.now();
+        const TTL = 5 * 60 * 1000; // 5 minuti
+        
+        const keysToRemove = [];
+        for (const key of autofillKeys) {
+            const data = allStorage[key];
+            if (data && data.timestamp) {
+                if (now - data.timestamp > TTL) {
+                    keysToRemove.push(key);
+                }
+            } else if (data && !data.timestamp) {
+                // Credenziali senza timestamp, rimuovile per sicurezza
+                keysToRemove.push(key);
+            }
+        }
+        
+        if (keysToRemove.length > 0) {
+            await chrome.storage.local.remove(keysToRemove);
+            console.log(`[Background] Rimosse ${keysToRemove.length} credenziali scadute`);
+        }
+    } catch (error) {
+        console.error('[Background] Errore durante pulizia credenziali:', error);
+    }
+}
+
+// Esegui pulizia all'avvio e ogni 5 minuti
+cleanupExpiredCredentials();
+setInterval(cleanupExpiredCredentials, 5 * 60 * 1000);
+
 // Ascolta messaggi dai content scripts e dal popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === "get_auto_token") {
