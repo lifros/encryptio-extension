@@ -123,6 +123,9 @@ document.addEventListener('click', async (e) => {
             }
         };
         
+        // Normalizza l'URL target una volta per tutte (usato in più punti)
+        const normalizedTargetUrl = normalizeUrl(url);
+        
         // Funzione migliorata per matching URL
         const urlsMatch = (url1, url2) => {
             if (!url1 || !url2) return false;
@@ -168,8 +171,7 @@ document.addEventListener('click', async (e) => {
             // Match esatto ha priorità
             if (!exactMatch && urlsMatch(pwd.url, url)) {
                 const normalizedPwd = normalizeUrl(pwd.url);
-                const normalizedTarget = normalizeUrl(url);
-                if (normalizedPwd === normalizedTarget) {
+                if (normalizedPwd === normalizedTargetUrl) {
                     exactMatch = pwd;
                 } else {
                     // Match per dominio
@@ -185,14 +187,37 @@ document.addEventListener('click', async (e) => {
             link.style.color = originalColor;
             link.style.opacity = '1';
             link.textContent = originalText;
+            
+            // Salva un marker nella nuova tab per comunicare che non ci sono password
+            const noPasswordKey = `encryptio_no_password_${normalizedTargetUrl.replace(/[^a-z0-9]/g, '_').substring(0, 100)}`;
+            await chrome.storage.local.set({
+                [noPasswordKey]: {
+                    url: url,
+                    timestamp: Date.now(),
+                    reason: 'no_password_found'
+                }
+            });
+            
             chrome.runtime.sendMessage({
                 action: 'show_notification',
                 type: 'warning',
                 title: 'Encryptio',
                 message: 'Nessuna password trovata per questo sito'
             });
-            // Fallback: apri il link normalmente
-            window.open(url, '_blank');
+            
+            // Apri comunque la nuova tab per mostrare il messaggio di errore
+            chrome.runtime.sendMessage({
+                action: 'open_tab_with_autofill',
+                url: url,
+                storageKey: noPasswordKey,
+                passwordName: 'Nessuna password'
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    console.error('[Encryptio Detector] Errore apertura tab:', chrome.runtime.lastError);
+                    // Fallback: apri il link normalmente
+                    window.open(url, '_blank');
+                }
+            });
             return;
         }
         

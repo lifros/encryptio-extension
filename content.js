@@ -98,7 +98,7 @@ function showStatusOverlay(message, type = 'info') {
     
     document.body.appendChild(overlay);
     
-    // Auto-rimuovi dopo alcuni secondi (tranne per 'info' che rimane fino a quando non viene sostituito)
+    // Auto-rimuovi dopo alcuni secondi (tranne per 'info' che rimane fino a quando non viene sostituito manualmente)
     if (type !== 'info') {
         setTimeout(() => {
             if (overlay.parentNode) {
@@ -106,6 +106,9 @@ function showStatusOverlay(message, type = 'info') {
                 setTimeout(() => overlay.remove(), 300);
             }
         }, type === 'success' ? 3000 : 5000);
+    } else {
+        // Per overlay di tipo 'info', rimani visibile fino a quando non viene sostituito o rimosso manualmente
+        // Non rimuovere automaticamente
     }
     
     return overlay;
@@ -130,6 +133,20 @@ async function checkAndFillAutoCredentials() {
         const allStorage = await chrome.storage.local.get(null);
         const autofillKeys = Object.keys(allStorage).filter(key => key.startsWith('encryptio_autofill_'));
         
+        // Cerca anche marker di "nessuna password trovata"
+        const noPasswordKey = `encryptio_no_password_${currentUrl.replace(/[^a-z0-9]/g, '_').substring(0, 100)}`;
+        const noPasswordMarker = allStorage[noPasswordKey];
+        
+        if (noPasswordMarker) {
+            console.log('[Encryptio] Marker trovato: nessuna password disponibile per questo sito');
+            showStatusOverlay('✕ Nessuna password trovata per questo sito', 'error');
+            // Rimuovi il marker dopo averlo mostrato
+            await chrome.storage.local.remove(noPasswordKey);
+            return;
+        }
+        
+        let credentialsFound = false;
+        
         for (const key of autofillKeys) {
             const data = allStorage[key];
             if (!data || !data.url) continue;
@@ -138,11 +155,12 @@ async function checkAndFillAutoCredentials() {
             
             // Verifica se l'URL corrisponde usando funzione migliorata
             if (urlsMatch(savedUrl, currentUrl)) {
+                credentialsFound = true;
                 console.log('[Encryptio] Credenziali trovate per autofill automatico');
                 
-                // Mostra overlay di ricerca
+                // Mostra overlay di ricerca (rimane visibile fino al completamento)
                 const passwordName = data.passwordName || 'Password';
-                showStatusOverlay(`Encryptio: ricerca credenziali per ${passwordName}...`, 'info');
+                const searchOverlay = showStatusOverlay(`⏳ Encryptio: ricerca credenziali per ${passwordName}...`, 'info');
                 
                 // Attendi che la pagina sia completamente caricata
                 if (document.readyState === 'loading') {
@@ -158,6 +176,9 @@ async function checkAndFillAutoCredentials() {
                 // Attendi un po' per assicurarsi che i campi siano renderizzati
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
+                // Aggiorna overlay: cerca campi login
+                showStatusOverlay(`🔍 Encryptio: ricerca campi login...`, 'info');
+                
                 // Inserisci le credenziali
                 const success = await fillLoginFields(data.username || '', data.password || '');
                 
@@ -169,29 +190,38 @@ async function checkAndFillAutoCredentials() {
                     await chrome.storage.local.remove(key);
                 } else {
                     console.log('[Encryptio] Campi login non trovati, riprovo tra 1 secondo...');
+                    showStatusOverlay(`🔍 Encryptio: riprovo ricerca campi login...`, 'info');
+                    
                     // Riprova dopo 1 secondo (alcuni siti caricano i campi dinamicamente)
-                    setTimeout(async () => {
-                        const retrySuccess = await fillLoginFields(data.username || '', data.password || '');
-                        if (retrySuccess) {
-                            removeStatusOverlay();
-                            showStatusOverlay('✓ Credenziali inserite con successo!', 'success');
-                            await chrome.storage.local.remove(key);
-                } else {
-                    removeStatusOverlay();
-                    showStatusOverlay('⚠ Campi login non trovati su questa pagina', 'warning');
-                    // Rimuovi comunque le credenziali dopo il tentativo (evita accumulo)
-                    await chrome.storage.local.remove(key);
-                }
-                    }, 1000);
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    const retrySuccess = await fillLoginFields(data.username || '', data.password || '');
+                    
+                    if (retrySuccess) {
+                        removeStatusOverlay();
+                        showStatusOverlay('✓ Credenziali inserite con successo!', 'success');
+                        await chrome.storage.local.remove(key);
+                    } else {
+                        removeStatusOverlay();
+                        showStatusOverlay('✕ Campi login non trovati su questa pagina', 'error');
+                        // Rimuovi comunque le credenziali dopo il tentativo (evita accumulo)
+                        await chrome.storage.local.remove(key);
+                    }
                 }
                 
                 break; // Inserisci solo la prima corrispondenza
             }
         }
+        
+        // Se non sono state trovate credenziali e non c'era un marker, potrebbe essere un problema
+        if (!credentialsFound && autofillKeys.length > 0) {
+            console.log('[Encryptio] Nessuna credenziale corrispondente trovata per questo URL');
+            showStatusOverlay('✕ Nessuna credenziale corrispondente trovata', 'error');
+        }
+        
     } catch (error) {
         console.error('[Encryptio] Errore durante autofill automatico:', error);
         removeStatusOverlay();
-        showStatusOverlay('✕ Errore durante l\'inserimento delle credenziali', 'error');
+        showStatusOverlay('✕ Errore durante l\'inserimento delle credenziali: ' + error.message, 'error');
     }
 }
 

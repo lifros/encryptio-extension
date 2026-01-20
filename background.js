@@ -7,7 +7,9 @@
 async function cleanupExpiredCredentials() {
     try {
         const allStorage = await chrome.storage.local.get(null);
-        const autofillKeys = Object.keys(allStorage).filter(key => key.startsWith('encryptio_autofill_'));
+        const autofillKeys = Object.keys(allStorage).filter(key => 
+            key.startsWith('encryptio_autofill_') || key.startsWith('encryptio_no_password_')
+        );
         const now = Date.now();
         const TTL = 5 * 60 * 1000; // 5 minuti
         
@@ -26,7 +28,7 @@ async function cleanupExpiredCredentials() {
         
         if (keysToRemove.length > 0) {
             await chrome.storage.local.remove(keysToRemove);
-            console.log(`[Background] Rimosse ${keysToRemove.length} credenziali scadute`);
+            console.log(`[Background] Rimosse ${keysToRemove.length} credenziali/marker scaduti`);
         }
     } catch (error) {
         console.error('[Background] Errore durante pulizia credenziali:', error);
