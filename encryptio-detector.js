@@ -315,32 +315,35 @@ document.addEventListener('click', async (e) => {
         }
         
         // Salva le credenziali nello storage temporaneo con chiave basata sull'URL
-        // SECURITY: cifra i dati prima di salvarli
+        // SECURITY: cifra i dati prima di salvarli usando background worker
         const storageKey = `encryptio_autofill_${normalizedTargetUrl.replace(/[^a-z0-9]/g, '_').substring(0, 100)}`;
 
-        // Carica crypto.js dinamicamente se non già disponibile
-        if (typeof encryptTemporaryData === 'undefined') {
-            await new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = chrome.runtime.getURL('crypto.js');
-                script.onload = resolve;
-                script.onerror = reject;
-                document.head.appendChild(script);
+        // Usa background worker per encryption (ha accesso a crypto.js)
+        const encryptResponse = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({
+                action: 'encrypt_credentials',
+                data: {
+                    username: (matchingPassword.username || '').trim(),
+                    password: (matchingPassword.password || '').trim(),
+                    url: url,
+                    timestamp: Date.now(),
+                    passwordName: (matchingPassword.name || matchingPassword.username || 'Password').trim()
+                }
+            }, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else if (!response || !response.success) {
+                    reject(new Error(response?.error || 'Encryption failed'));
+                } else {
+                    resolve(response);
+                }
             });
-        }
-
-        const encryptedData = await encryptTemporaryData({
-            username: (matchingPassword.username || '').trim(),
-            password: (matchingPassword.password || '').trim(),
-            url: url,
-            timestamp: Date.now(),
-            passwordName: (matchingPassword.name || matchingPassword.username || 'Password').trim()
         });
 
         await chrome.storage.local.set({
             [storageKey]: {
                 encrypted: true,
-                data: encryptedData,
+                data: encryptResponse.encrypted,
                 timestamp: Date.now()
             }
         });

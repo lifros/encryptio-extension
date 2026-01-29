@@ -104,6 +104,9 @@ async function cleanupExpiredCredentials() {
 cleanupExpiredCredentials();
 setInterval(cleanupExpiredCredentials, 5 * 60 * 1000);
 
+// Importa crypto.js per funzioni di encryption
+importScripts('crypto.js');
+
 /**
  * Inietta content script dinamicamente quando richiesto
  */
@@ -183,6 +186,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 error: error.message
             });
         });
+
+        return true; // Risposta asincrona
+    } else if (request.action === "encrypt_credentials") {
+        // Cripta credenziali per storage temporaneo
+        console.log('[Background] Richiesta encryption credenziali');
+
+        encryptTemporaryData(request.data)
+            .then(encryptedData => {
+                sendResponse({ success: true, encrypted: encryptedData });
+            })
+            .catch(error => {
+                console.error('[Background] Errore encryption:', error);
+                sendResponse({ success: false, error: error.message });
+            });
 
         return true; // Risposta asincrona
     } else if (request.action === "get_auto_token") {
