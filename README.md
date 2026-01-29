@@ -1,11 +1,14 @@
 # 🔐 Encryptio Password Manager - Browser Extension
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/lifros/encryptio-extension)
 [![Manifest](https://img.shields.io/badge/manifest-v3-green.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
 [![Security](https://img.shields.io/badge/security-hardened-success.svg)](#-security-overview)
-[![License](https://img.shields.io/badge/license-proprietary-red.svg)]()
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-Secure browser extension for password management with intelligent autofill, integrated with [encryptio.it](https://encryptio.it).
+Secure browser extension for password management with intelligent autofill, integrated with [encryptio.it](https://www.encryptio.it).
+
+**🌐 Official Website**: [www.encryptio.it](https://www.encryptio.it)
+**📦 GitHub Repository**: [github.com/lifros/encryptio-extension](https://github.com/lifros/encryptio-extension)
 
 ---
 
@@ -154,7 +157,9 @@ Master key configuration is currently manual via extension storage. A UI for thi
 
 ## 🆘 Support
 
+- **Website**: [www.encryptio.it](https://www.encryptio.it)
 - **Email**: info@encryptio.it
+- **GitHub Issues**: [github.com/lifros/encryptio-extension/issues](https://github.com/lifros/encryptio-extension/issues)
 - **Security Issues**: info@encryptio.it (confidential)
 
 ---
@@ -190,9 +195,9 @@ The extension requires these permissions:
 
 ## 📜 License
 
-Copyright © 2026 Encryptio. All rights reserved.
+MIT License - see [LICENSE](./LICENSE) file for details.
 
-This software is proprietary. Redistribution or modification without authorization is prohibited.
+Copyright © 2025 Encryptio Password Manager
 
 ---
 
@@ -206,7 +211,8 @@ Technical documentation, architecture details, and implementation specifics are 
 
 **🔐 Encryptio - Secure Password Management Made Simple**
 
-[![Website](https://img.shields.io/badge/website-encryptio.it-blue)](https://encryptio.it)
+[![Website](https://img.shields.io/badge/website-encryptio.it-blue)](https://www.encryptio.it)
+[![GitHub](https://img.shields.io/badge/GitHub-lifros%2Fencryptio--extension-181717?logo=github)](https://github.com/lifros/encryptio-extension)
 
 Made with 🛡️ in Italy
 

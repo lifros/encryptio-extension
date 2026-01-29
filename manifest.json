@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "Encryptio Password Manager",
   "version": "1.1.0",
-  "description": "Password manager enterprise con autofill sicuro per encryptio.it",
+  "description": "Secure password manager with intelligent autofill for encryptio.it",
+  "homepage_url": "https://www.encryptio.it",
   "permissions": [
     "storage",
     "activeTab",

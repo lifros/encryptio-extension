@@ -4,6 +4,9 @@
 
 This document contains detailed technical information about the extension's architecture, implementation details, and security mechanisms.
 
+**🌐 Official Website**: [www.encryptio.it](https://www.encryptio.it)
+**📦 GitHub Repository**: [github.com/lifros/encryptio-extension](https://github.com/lifros/encryptio-extension)
+
 ---
 
 ## 🏗️ Architecture

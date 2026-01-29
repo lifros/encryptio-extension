@@ -6,6 +6,9 @@
 // Genera una chiave di sessione casuale per cifrare i dati temporanei
 let sessionKey = null;
 
+// Chiave HMAC unica per installazione (generata una volta e salvata)
+let hmacKey = null;
+
 /**
  * Ottiene o genera la chiave di sessione (in-memory, persa al riavvio estensione)
  */
@@ -18,6 +21,39 @@ async function getSessionKey() {
         );
     }
     return sessionKey;
+}
+
+/**
+ * Ottiene o genera chiave HMAC unica per installazione
+ * SECURITY: Generata una sola volta e salvata in local storage
+ */
+async function getHMACKey() {
+    if (hmacKey) {
+        return hmacKey;
+    }
+
+    return new Promise((resolve, reject) => {
+        chrome.storage.local.get(['hmac_key'], async (result) => {
+            if (result.hmac_key) {
+                // Usa chiave esistente
+                hmacKey = result.hmac_key;
+                resolve(hmacKey);
+            } else {
+                // Genera nuova chiave random (256 bit = 32 bytes)
+                const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+                hmacKey = btoa(String.fromCharCode(...randomBytes));
+
+                // Salva per uso futuro
+                chrome.storage.local.set({ hmac_key: hmacKey }, () => {
+                    if (chrome.runtime.lastError) {
+                        reject(chrome.runtime.lastError);
+                    } else {
+                        resolve(hmacKey);
+                    }
+                });
+            }
+        });
+    });
 }
 
 /**
@@ -90,8 +126,8 @@ async function encryptTemporaryData(data) {
         const encryptedBase64 = btoa(String.fromCharCode(...combined));
 
         // Genera HMAC per verificare integrità
-        const hmacKey = 'encryptio-integrity-key-v1'; // Chiave statica per HMAC
-        const hmac = await generateHMAC(encryptedBase64, hmacKey);
+        const key = await getHMACKey();
+        const hmac = await generateHMAC(encryptedBase64, key);
 
         // Restituisce encrypted + hmac separati da ':'
         return `${encryptedBase64}:${hmac}`;
@@ -121,8 +157,8 @@ async function decryptTemporaryData(encryptedData) {
 
         // Verifica integrità se presente HMAC
         if (hmac) {
-            const hmacKey = 'encryptio-integrity-key-v1';
-            const isValid = await verifyHMAC(encryptedBase64, hmac, hmacKey);
+            const key = await getHMACKey();
+            const isValid = await verifyHMAC(encryptedBase64, hmac, key);
             if (!isValid) {
                 throw new Error('Data integrity verification failed - possible tampering detected');
             }
