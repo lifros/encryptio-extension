@@ -264,7 +264,6 @@ async function setMasterPassword(masterKey) {
 export {
     encryptTemporaryData,
     decryptTemporaryData,
-    encryptPassword,
     decryptPassword,
     getMasterPassword,
     setMasterPassword
