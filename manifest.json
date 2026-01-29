@@ -1,15 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Encryptio Password Manager",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Password manager enterprise con autofill sicuro per encryptio.it",
   "permissions": [
     "storage",
     "activeTab",
-    "notifications"
+    "notifications",
+    "scripting"
   ],
   "host_permissions": [
-    "https://*.encryptio.it/*"
+    "https://*.encryptio.it/*",
+    "http://*/*",
+    "https://*/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -22,18 +25,24 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"]
-    },
-    {
       "matches": ["https://*.encryptio.it/*"],
       "js": ["encryptio-detector.js"],
       "run_at": "document_idle"
     }
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; base-uri 'self'; form-action 'none';"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["crypto.js", "utils.js", "audit.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",

@@ -82,19 +82,48 @@ async function detectCurrentDomain() {
  */
 async function sendToContentScript(username, password) {
     const content = document.getElementById('content');
-    
+
     // Mostra feedback di caricamento
     showNotification('Inserimento credenziali...', 'info');
-    
+
     return new Promise((resolve) => {
-        chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+        chrome.tabs.query({active: true, currentWindow: true}, async function(tabs) {
             if (!tabs[0]) {
                 showNotification('Nessuna scheda attiva', 'error');
                 resolve(false);
                 return;
             }
 
-            chrome.tabs.sendMessage(tabs[0].id, {
+            const tabId = tabs[0].id;
+
+            // Verifica se content script è caricato
+            let scriptLoaded = false;
+            try {
+                const pingResponse = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+                scriptLoaded = pingResponse && pingResponse.pong;
+            } catch (error) {
+                scriptLoaded = false;
+            }
+
+            // Se non è caricato, iniettalo
+            if (!scriptLoaded) {
+                try {
+                    await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        files: ['utils.js', 'crypto.js', 'content.js']
+                    });
+                    // Attendi un po' per assicurarsi che sia inizializzato
+                    await new Promise(r => setTimeout(r, 100));
+                } catch (error) {
+                    showNotification('Errore: impossibile iniettare script nella pagina', 'error');
+                    console.error("Errore iniezione script:", error);
+                    resolve(false);
+                    return;
+                }
+            }
+
+            // Ora invia il messaggio
+            chrome.tabs.sendMessage(tabId, {
                 action: "fill_credentials",
                 username: username,
                 password: password
@@ -186,16 +215,174 @@ function updateMainContent(target) {
     }
 }
 
+// Rate limiting per API calls
+const apiRateLimiter = {
+    requests: new Map(), // Map<endpoint, Array<timestamp>>
+    maxRequests: 5,
+    windowMs: 60 * 1000, // 1 minuto
+    lockoutMs: 5 * 60 * 1000, // 5 minuti lockout
+    lockedEndpoints: new Map(), // Map<endpoint, lockoutUntil>
+
+    isLocked(endpoint) {
+        const lockoutUntil = this.lockedEndpoints.get(endpoint);
+        if (lockoutUntil && Date.now() < lockoutUntil) {
+            return true;
+        }
+        if (lockoutUntil) {
+            this.lockedEndpoints.delete(endpoint);
+        }
+        return false;
+    },
+
+    canMakeRequest(endpoint) {
+        if (this.isLocked(endpoint)) {
+            const lockoutUntil = this.lockedEndpoints.get(endpoint);
+            const remainingMs = lockoutUntil - Date.now();
+            const remainingMin = Math.ceil(remainingMs / 60000);
+            throw new Error(`Too many requests. Please wait ${remainingMin} minute(s) before trying again.`);
+        }
+
+        const now = Date.now();
+        const requests = this.requests.get(endpoint) || [];
+
+        // Rimuovi richieste fuori dalla finestra temporale
+        const recentRequests = requests.filter(timestamp => now - timestamp < this.windowMs);
+
+        if (recentRequests.length >= this.maxRequests) {
+            // Troppo richieste, lockout
+            this.lockedEndpoints.set(endpoint, now + this.lockoutMs);
+            throw new Error(`Rate limit exceeded. Locked for ${this.lockoutMs / 60000} minutes.`);
+        }
+
+        // Aggiungi nuova richiesta
+        recentRequests.push(now);
+        this.requests.set(endpoint, recentRequests);
+
+        return true;
+    }
+};
+
+// Certificate pinning per encryptio.it
+// SHA-256 hash del certificato pubblico (esempio - da aggiornare con cert reale)
+const ENCRYPTIO_CERT_PINS = [
+    // Main certificate (to be updated with actual cert)
+    'sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+    // Backup certificate
+    'sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB='
+];
+
 /**
- * Copia la password generata negli appunti
+ * Valida che l'URL della risposta provenga da encryptio.it
  */
+function validateApiOrigin(url) {
+    try {
+        const urlObj = new URL(url);
+        const hostname = urlObj.hostname.toLowerCase();
+        return hostname === 'encryptio.it' || hostname === 'www.encryptio.it' || hostname.endsWith('.encryptio.it');
+    } catch (error) {
+        console.error('[Security] Invalid URL:', error);
+        return false;
+    }
+}
+
+/**
+ * Verifica certificate pinning (limitato in estensioni browser)
+ * NOTA: Manifest V3 non supporta intercettazione certificati
+ * Questa è una validazione a livello applicazione come fallback
+ */
+function validateCertificate(response) {
+    // Certificate pinning non è fully supportato in browser extensions
+    // Ma possiamo fare alcune verifiche a livello applicazione
+
+    // Verifica che la connessione sia HTTPS
+    if (!response.url.startsWith('https://')) {
+        console.error('[Security] Non-HTTPS connection detected');
+        return false;
+    }
+
+    // In produzione, implementare validazione aggiuntiva tramite backend
+    // o usando Content Security Policy report-uri
+    return true;
+}
+
+/**
+ * Fetch sicura che valida l'origine della risposta + rate limiting
+ */
+async function secureFetch(url, options = {}) {
+    // Valida URL prima della chiamata
+    if (!validateApiOrigin(url)) {
+        throw new Error('Origine API non autorizzata');
+    }
+
+    // Estrai endpoint per rate limiting (rimuovi query params)
+    const urlObj = new URL(url);
+    const endpoint = urlObj.pathname;
+
+    // Verifica rate limit
+    try {
+        apiRateLimiter.canMakeRequest(endpoint);
+    } catch (error) {
+        console.error('[Security] Rate limit exceeded:', endpoint);
+        throw error;
+    }
+
+    const response = await fetch(url, options);
+
+    // Valida URL della risposta (in caso di redirect)
+    if (!validateApiOrigin(response.url)) {
+        throw new Error('Response from unauthorized origin');
+    }
+
+    // Valida certificato HTTPS
+    if (!validateCertificate(response)) {
+        throw new Error('Certificate validation failed');
+    }
+
+    return response;
+}
+
+/**
+ * Copia la password generata negli appunti con auto-clear dopo 30 secondi
+ */
+let clipboardClearTimer = null;
+
 function copyGeneratedPassword() {
     const passElement = document.getElementById('gen-pass');
     if (passElement && passElement.textContent !== '********') {
-        navigator.clipboard.writeText(passElement.textContent).then(() => {
-            showNotification('Password copiata!', 'success');
+        const password = passElement.textContent;
+
+        navigator.clipboard.writeText(password).then(() => {
+            showNotification('Password copied! Will auto-clear in 30s', 'success');
+
+            // Cancella timer precedente se esiste
+            if (clipboardClearTimer) {
+                clearTimeout(clipboardClearTimer);
+            }
+
+            // Auto-clear clipboard dopo 30 secondi
+            clipboardClearTimer = setTimeout(async () => {
+                try {
+                    // Verifica se la clipboard contiene ancora la nostra password
+                    const currentClipboard = await navigator.clipboard.readText();
+                    if (currentClipboard === password) {
+                        // Sovrascrivi con stringa vuota
+                        await navigator.clipboard.writeText('');
+                        console.log('[Encryptio] Clipboard auto-cleared');
+
+                        // Notifica solo se popup ancora aperto
+                        try {
+                            showNotification('Clipboard cleared for security', 'info');
+                        } catch (e) {
+                            // Popup chiuso, ignora
+                        }
+                    }
+                } catch (error) {
+                    // Permessi clipboard potrebbero essere revocati, ignora
+                    console.log('[Encryptio] Cannot clear clipboard:', error.message);
+                }
+            }, 30000);
         }).catch(() => {
-            showNotification('Errore nella copia', 'error');
+            showNotification('Error copying to clipboard', 'error');
         });
     }
 }
@@ -305,17 +492,17 @@ async function loadVaultFromFlask() {
             return;
         }
 
-        console.log('Chiamata API vault con token:', token ? token.substring(0, 20) + '...' : 'NONE');
+        console.log('Chiamata API vault');
         
         // Aggiungi timeout alla chiamata API
         const response = await Promise.race([
-            fetch('https://www.encryptio.it/password/api/v1/vault', {
-                headers: { 
+            secureFetch('https://www.encryptio.it/password/api/v1/vault', {
+                headers: {
                     'Authorization': 'Bearer ' + token,
                     'Content-Type': 'application/json'
                 }
             }),
-            new Promise((_, reject) => 
+            new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Timeout connessione API')), 15000)
             )
         ]);
@@ -323,21 +510,25 @@ async function loadVaultFromFlask() {
         console.log('Risposta API vault:', response.status, response.statusText);
 
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Errore API vault:', response.status, errorText);
-            
+            // SECURITY: Generic error messages for user, detailed only in console
+            console.error('[API Error]', response.status, response.statusText);
+
             if (response.status === 401) {
                 // Token non valido o scaduto
                 await chrome.storage.local.remove(['auth_token']);
                 content.innerHTML = `
                     <div style="padding: 20px; text-align: center;">
-                        <p style="color: #dc3545; margin-bottom: 10px;">Token scaduto o non valido</p>
-                        <p style="color: #666; font-size: 12px; margin-bottom: 15px;">Genera un nuovo token API su encryptio.it</p>
-                        <a href="https://www.encryptio.it/user/settings" target="_blank" style="color: #007bff; text-decoration: underline; font-size: 12px;">Vai alle impostazioni</a>
+                        <p style="color: #dc3545; margin-bottom: 10px;">Authentication required</p>
+                        <p style="color: #666; font-size: 12px; margin-bottom: 15px;">Please login to encryptio.it</p>
+                        <a href="https://www.encryptio.it/user/settings" target="_blank" style="color: #007bff; text-decoration: underline; font-size: 12px;">Go to settings</a>
                     </div>
                 `;
+            } else if (response.status === 429) {
+                throw new Error('Too many requests. Please wait a moment.');
+            } else if (response.status >= 500) {
+                throw new Error('Server error. Please try again later.');
             } else {
-                throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 200)}`);
+                throw new Error('Request failed. Please check your connection.');
             }
             return;
         }
@@ -349,14 +540,24 @@ async function loadVaultFromFlask() {
         // Renderizza gli elementi ricevuti
         renderVaultItems(vaultData);
     } catch (error) {
-        console.error('Error loading vault:', error);
-        const errorMessage = error.message || 'Errore sconosciuto';
+        // SECURITY: Log detailed error only in console
+        console.error('[Vault Error]', error);
+
+        // Generic user-facing error message
+        let userMessage = 'Connection error';
+        if (error.message.includes('timeout')) {
+            userMessage = 'Request timeout. Please try again.';
+        } else if (error.message.includes('unauthorized')) {
+            userMessage = 'Authentication failed';
+        } else if (error.message.includes('Rate limit')) {
+            userMessage = error.message; // Rate limit messages are safe to show
+        }
+
         content.innerHTML = `
             <div style="padding: 20px; text-align: center;">
-                <p style="color: #dc3545; margin-bottom: 10px;">Errore di connessione</p>
-                <p style="color: #666; font-size: 12px; margin-bottom: 10px;">${errorMessage}</p>
-                <p style="color: #888; font-size: 11px; margin-bottom: 15px;">Controlla la console per maggiori dettagli (F12)</p>
-                <button class="fill-btn retry-button" style="margin-top: 10px;">Riprova</button>
+                <p style="color: #dc3545; margin-bottom: 10px;">Error</p>
+                <p style="color: #666; font-size: 12px; margin-bottom: 10px;">${userMessage}</p>
+                <button class="fill-btn retry-button" style="margin-top: 10px;">Retry</button>
             </div>
         `;
         // Aggiungi event listener per il pulsante
@@ -477,17 +678,37 @@ function createVaultItemElement(item, isSuggestion = false) {
     if (!domain) {
         domain = item.name || 'example.com';
     }
-    
+
     const displayName = item.name || domain;
-    
-    div.innerHTML = `
-        <img src="https://www.google.com/s2/favicons?domain=${domain}" alt="" class="vault-favicon" data-fallback="icon.png">
-        <div class="info">
-            <span class="name">${escapeHtml(displayName)}</span>
-            <span class="user">${escapeHtml(item.username || 'N/A')}</span>
-        </div>
-        <button class="fill-btn">Inserisci</button>
-    `;
+
+    // SECURITY: Non caricare favicon da domini esterni (Google)
+    // Usa solo icona locale per evitare tracking e dipendenze esterne
+    const faviconImg = document.createElement('img');
+    faviconImg.className = 'vault-favicon';
+    faviconImg.src = 'icon.png'; // Usa sempre icona locale
+    faviconImg.alt = '';
+
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'info';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'name';
+    nameSpan.textContent = displayName;
+
+    const userSpan = document.createElement('span');
+    userSpan.className = 'user';
+    userSpan.textContent = item.username || 'N/A';
+
+    infoDiv.appendChild(nameSpan);
+    infoDiv.appendChild(userSpan);
+
+    const fillBtn = document.createElement('button');
+    fillBtn.className = 'fill-btn';
+    fillBtn.textContent = 'Inserisci';
+
+    div.appendChild(faviconImg);
+    div.appendChild(infoDiv);
+    div.appendChild(fillBtn);
 
     // Funzione per inserire le credenziali
     const fillCredentials = async (e) => {
@@ -575,8 +796,8 @@ async function ensureAuthToken() {
     if (existingToken) {
         // Verifica rapida: prova a chiamare l'API
         try {
-            const testResponse = await fetch('https://www.encryptio.it/password/api/v1/vault', {
-                headers: { 
+            const testResponse = await secureFetch('https://www.encryptio.it/password/api/v1/vault', {
+                headers: {
                     'Authorization': 'Bearer ' + existingToken,
                     'Content-Type': 'application/json'
                 }
@@ -625,7 +846,7 @@ async function ensureAuthToken() {
 async function getAutoToken() {
     // Prova prima direttamente l'API (i cookie potrebbero essere condivisi)
     try {
-        const directResponse = await fetch('https://www.encryptio.it/password/api/v1/token/auto', {
+        const directResponse = await secureFetch('https://www.encryptio.it/password/api/v1/token/auto', {
             method: 'POST',
             credentials: 'include', // Invia i cookie di sessione
             headers: {

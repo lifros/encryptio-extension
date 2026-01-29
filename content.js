@@ -62,10 +62,17 @@ function showStatusOverlay(message, type = 'info') {
     `;
     
     const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : type === 'warning' ? '⚠' : '⏳';
-    overlay.innerHTML = `
-        <span style="font-size: 18px;">${icon}</span>
-        <span>${message}</span>
-    `;
+
+    // SECURITY: Usa textContent invece di innerHTML per prevenire XSS
+    const iconSpan = document.createElement('span');
+    iconSpan.style.fontSize = '18px';
+    iconSpan.textContent = icon;
+
+    const messageSpan = document.createElement('span');
+    messageSpan.textContent = message;
+
+    overlay.appendChild(iconSpan);
+    overlay.appendChild(messageSpan);
     
     // Aggiungi animazione CSS
     if (!document.getElementById('encryptio-overlay-styles')) {
@@ -148,9 +155,25 @@ async function checkAndFillAutoCredentials() {
         let credentialsFound = false;
         
         for (const key of autofillKeys) {
-            const data = allStorage[key];
+            const storedData = allStorage[key];
+            if (!storedData) continue;
+
+            // Decifra i dati se sono cifrati
+            let data;
+            if (storedData.encrypted && storedData.data) {
+                try {
+                    data = await decryptTemporaryData(storedData.data);
+                } catch (error) {
+                    console.error('[Encryptio] Errore decifratura credenziali:', error);
+                    continue;
+                }
+            } else {
+                // Formato legacy non cifrato
+                data = storedData;
+            }
+
             if (!data || !data.url) continue;
-            
+
             const savedUrl = normalizeUrl(data.url);
             
             // Verifica se l'URL corrisponde usando funzione migliorata
@@ -238,9 +261,13 @@ if (document.readyState === 'loading') {
 
 // 1. Ascolta i messaggi provenienti dal POPUP o dal BACKGROUND
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "fill_credentials") {
+  if (request.action === "ping") {
+      // Verifica che lo script sia caricato
+      sendResponse({ pong: true });
+      return false;
+  } else if (request.action === "fill_credentials") {
       const success = fillLoginFields(request.username, request.password);
-      sendResponse({ 
+      sendResponse({
           status: success ? "success" : "fields_not_found",
           message: success ? "Credenziali inserite con successo" : "Campi login non trovati"
       });
@@ -250,17 +277,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // 2. Funzione per iniettare i dati nei campi
 async function fillLoginFields(user, pass) {
-  // Valida input
-  if (!pass || pass.trim() === '') {
-    console.warn('[Encryptio] Password vuota, impossibile inserire');
+  // Valida input con funzioni da utils.js
+  const usernameValidation = validateUsername(user);
+  const passwordValidation = validatePassword(pass);
+
+  if (!passwordValidation.valid) {
+    console.warn('[Encryptio] Password validation failed:', passwordValidation.error);
     return false;
   }
-  
-  // Sanitizza input (rimuovi caratteri pericolosi ma mantieni quelli validi per password)
-  const sanitizedUser = (user || '').trim();
-  const sanitizedPass = pass.trim();
-  
-  console.log('[Encryptio] Tentativo di inserire credenziali, username:', sanitizedUser ? sanitizedUser.substring(0, 3) + '...' : 'NONE');
+
+  if (!usernameValidation.valid) {
+    console.warn('[Encryptio] Username validation failed:', usernameValidation.error);
+    return false;
+  }
+
+  const sanitizedUser = usernameValidation.sanitized;
+  const sanitizedPass = passwordValidation.sanitized;
+
+  console.log('[Encryptio] Tentativo di inserire credenziali');
   
   // Cerchiamo i campi password con selettori migliorati
   const passwordField = document.querySelector('input[type="password"]');
@@ -421,7 +455,7 @@ async function fillLoginFields(user, pass) {
               await new Promise(resolve => setTimeout(resolve, 50));
               
               if (userField.value === sanitizedUser) {
-                  console.log('[Encryptio] Username inserito correttamente:', sanitizedUser.substring(0, 3) + '...');
+                  console.log('[Encryptio] Username inserito correttamente');
                   break;
               } else if (attempt < 2) {
                   console.log('[Encryptio] Tentativo', attempt + 1, 'fallito, riprovo...');

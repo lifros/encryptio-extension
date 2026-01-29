@@ -3,6 +3,71 @@
  * Gestisce la comunicazione tra content scripts e popup
  */
 
+// Session management
+let lastActivityTimestamp = Date.now();
+const SESSION_TIMEOUT = 15 * 60 * 1000; // 15 minuti
+
+/**
+ * Aggiorna timestamp ultima attività
+ */
+function updateActivity() {
+    lastActivityTimestamp = Date.now();
+}
+
+/**
+ * Verifica se la sessione è scaduta
+ */
+function isSessionExpired() {
+    return Date.now() - lastActivityTimestamp > SESSION_TIMEOUT;
+}
+
+/**
+ * Invalida sessione e pulisci dati sensibili
+ */
+async function invalidateSession() {
+    console.log('[Background] Sessione scaduta, pulizia dati sensibili');
+
+    try {
+        // Log audit event
+        if (typeof logAuditEvent === 'function') {
+            await logAuditEvent('session_expired', { reason: 'inactivity_timeout' });
+        }
+
+        // Rimuovi token e credenziali temporanee
+        const allStorage = await chrome.storage.local.get(null);
+        const keysToRemove = Object.keys(allStorage).filter(key =>
+            key.startsWith('encryptio_autofill_') ||
+            key.startsWith('encryptio_no_password_') ||
+            key === 'auth_token'
+        );
+
+        if (keysToRemove.length > 0) {
+            await chrome.storage.local.remove(keysToRemove);
+            console.log(`[Background] Rimossi ${keysToRemove.length} elementi per scadenza sessione`);
+        }
+
+        // Notifica l'utente
+        chrome.notifications.create({
+            type: 'basic',
+            iconUrl: 'icon.png',
+            title: 'Encryptio - Session Expired',
+            message: 'Your session has expired due to inactivity. Please login again.',
+            priority: 1
+        });
+    } catch (error) {
+        console.error('[Background] Errore durante invalidazione sessione:', error);
+    }
+}
+
+// Controlla scadenza sessione ogni minuto
+setInterval(() => {
+    if (isSessionExpired()) {
+        invalidateSession();
+        // Reset timestamp per evitare multiple notifiche
+        lastActivityTimestamp = Date.now();
+    }
+}, 60 * 1000);
+
 // Pulizia periodica delle credenziali scadute dallo storage
 async function cleanupExpiredCredentials() {
     try {
@@ -39,8 +104,40 @@ async function cleanupExpiredCredentials() {
 cleanupExpiredCredentials();
 setInterval(cleanupExpiredCredentials, 5 * 60 * 1000);
 
+/**
+ * Inietta content script dinamicamente quando richiesto
+ */
+async function injectContentScript(tabId) {
+    try {
+        await chrome.scripting.executeScript({
+            target: { tabId: tabId },
+            files: ['utils.js', 'crypto.js', 'content.js']
+        });
+        console.log('[Background] Content script iniettato in tab:', tabId);
+        return true;
+    } catch (error) {
+        console.error('[Background] Errore iniezione content script:', error);
+        return false;
+    }
+}
+
+/**
+ * Verifica se content script è già caricato in una tab
+ */
+async function isContentScriptLoaded(tabId) {
+    try {
+        const response = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
+        return response && response.pong;
+    } catch (error) {
+        return false;
+    }
+}
+
 // Ascolta messaggi dai content scripts e dal popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // Aggiorna attività ad ogni messaggio
+    updateActivity();
+
     if (request.action === "get_auto_token") {
         console.log('[Background] Richiesta token automatico ricevuta');
         
@@ -94,13 +191,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (request.action === "open_tab_with_autofill") {
         // Apri una nuova tab e prepara l'autofill
         console.log('[Background] Apertura tab con autofill per:', request.url);
-        chrome.tabs.create({ url: request.url }, (tab) => {
+        chrome.tabs.create({ url: request.url }, async (tab) => {
             if (chrome.runtime.lastError) {
                 console.error('[Background] Errore apertura tab:', chrome.runtime.lastError);
                 sendResponse({ success: false, error: chrome.runtime.lastError.message });
             } else {
                 console.log('[Background] Tab aperta con ID:', tab.id);
-                // Il content script nella nuova tab leggerà le credenziali dallo storage
+
+                // Aspetta che la tab sia caricata prima di iniettare lo script
+                chrome.tabs.onUpdated.addListener(async function listener(tabId, changeInfo) {
+                    if (tabId === tab.id && changeInfo.status === 'complete') {
+                        chrome.tabs.onUpdated.removeListener(listener);
+
+                        // Inietta il content script
+                        const injected = await injectContentScript(tab.id);
+                        if (!injected) {
+                            console.warn('[Background] Impossibile iniettare content script');
+                        }
+                    }
+                });
+
                 sendResponse({ success: true, tabId: tab.id });
             }
         });

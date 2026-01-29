@@ -4,6 +4,39 @@
  * Intercetta i click sui link delle password nella dashboard per autofill automatico
  */
 
+/**
+ * Valida che l'URL della risposta provenga da encryptio.it
+ */
+function validateApiOrigin(url) {
+    try {
+        const urlObj = new URL(url);
+        const hostname = urlObj.hostname.toLowerCase();
+        return hostname === 'encryptio.it' || hostname === 'www.encryptio.it' || hostname.endsWith('.encryptio.it');
+    } catch (error) {
+        console.error('[Security] URL non valido:', error);
+        return false;
+    }
+}
+
+/**
+ * Fetch sicura che valida l'origine della risposta
+ */
+async function secureFetch(url, options = {}) {
+    // Valida URL prima della chiamata
+    if (!validateApiOrigin(url)) {
+        throw new Error('Origine API non autorizzata');
+    }
+
+    const response = await fetch(url, options);
+
+    // Valida URL della risposta (in caso di redirect)
+    if (!validateApiOrigin(response.url)) {
+        throw new Error('Risposta da origine non autorizzata');
+    }
+
+    return response;
+}
+
 // Intercetta i click sui link delle password nella dashboard
 document.addEventListener('click', async (e) => {
     // Verifica se il click è su un link URL di una password nella dashboard
@@ -78,7 +111,7 @@ document.addEventListener('click', async (e) => {
         
         // Recupera tutte le password dall'API con timeout
         const vaultResponse = await Promise.race([
-            fetch('https://www.encryptio.it/password/api/v1/vault', {
+            secureFetch('https://www.encryptio.it/password/api/v1/vault', {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -86,7 +119,7 @@ document.addEventListener('click', async (e) => {
                 },
                 credentials: 'include'
             }),
-            new Promise((_, reject) => 
+            new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Timeout recupero vault')), 15000)
             )
         ]);
@@ -240,14 +273,33 @@ document.addEventListener('click', async (e) => {
         }
         
         // Salva le credenziali nello storage temporaneo con chiave basata sull'URL
+        // SECURITY: cifra i dati prima di salvarli
         const storageKey = `encryptio_autofill_${normalizedTargetUrl.replace(/[^a-z0-9]/g, '_').substring(0, 100)}`;
+
+        // Carica crypto.js dinamicamente se non già disponibile
+        if (typeof encryptTemporaryData === 'undefined') {
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = chrome.runtime.getURL('crypto.js');
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+
+        const encryptedData = await encryptTemporaryData({
+            username: (matchingPassword.username || '').trim(),
+            password: (matchingPassword.password || '').trim(),
+            url: url,
+            timestamp: Date.now(),
+            passwordName: (matchingPassword.name || matchingPassword.username || 'Password').trim()
+        });
+
         await chrome.storage.local.set({
             [storageKey]: {
-                username: (matchingPassword.username || '').trim(),
-                password: (matchingPassword.password || '').trim(),
-                url: url,
-                timestamp: Date.now(),
-                passwordName: (matchingPassword.name || matchingPassword.username || 'Password').trim()
+                encrypted: true,
+                data: encryptedData,
+                timestamp: Date.now()
             }
         });
         
@@ -374,7 +426,7 @@ function checkLoginStatus() {
 async function getAutoToken() {
     try {
         console.log('Tentativo di ottenere token automatico...');
-        const response = await fetch('https://www.encryptio.it/password/api/v1/token/auto', {
+        const response = await secureFetch('https://www.encryptio.it/password/api/v1/token/auto', {
             method: 'POST',
             credentials: 'include', // Invia i cookie di sessione
             headers: {

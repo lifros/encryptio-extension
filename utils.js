@@ -4,6 +4,66 @@
  */
 
 /**
+ * Valida e sanitizza input username
+ * @param {string} username - Username da validare
+ * @returns {object} { valid: boolean, sanitized: string, error: string }
+ */
+function validateUsername(username) {
+    if (!username) {
+        return { valid: true, sanitized: '', error: null }; // Username opzionale
+    }
+
+    // Max length 255 caratteri
+    if (username.length > 255) {
+        return { valid: false, sanitized: '', error: 'Username too long (max 255 characters)' };
+    }
+
+    // Rimuovi caratteri di controllo e null bytes
+    const sanitized = username.replace(/[\x00-\x1F\x7F]/g, '').trim();
+
+    // Verifica pattern SQL injection comuni
+    const sqlPatterns = [
+        /(\bOR\b.*=.*)|(\bAND\b.*=.*)/i,
+        /(union.*select)|(select.*from)/i,
+        /(drop|delete|insert|update).*table/i,
+        /--|;|\/\*|\*\//
+    ];
+
+    for (const pattern of sqlPatterns) {
+        if (pattern.test(sanitized)) {
+            return { valid: false, sanitized: '', error: 'Invalid characters in username' };
+        }
+    }
+
+    return { valid: true, sanitized, error: null };
+}
+
+/**
+ * Valida e sanitizza input password
+ * @param {string} password - Password da validare
+ * @returns {object} { valid: boolean, sanitized: string, error: string }
+ */
+function validatePassword(password) {
+    if (!password || password.trim() === '') {
+        return { valid: false, sanitized: '', error: 'Password cannot be empty' };
+    }
+
+    // Max length 1024 caratteri (supporta passphrase lunghe)
+    if (password.length > 1024) {
+        return { valid: false, sanitized: '', error: 'Password too long (max 1024 characters)' };
+    }
+
+    // Rimuovi solo null bytes (password può contenere qualsiasi carattere)
+    const sanitized = password.replace(/\x00/g, '');
+
+    if (sanitized.length === 0) {
+        return { valid: false, sanitized: '', error: 'Password invalid' };
+    }
+
+    return { valid: true, sanitized, error: null };
+}
+
+/**
  * Normalizza un URL per il confronto (rimuovi trailing slash, www, etc)
  * @param {string} u - URL da normalizzare
  * @returns {string} URL normalizzato
