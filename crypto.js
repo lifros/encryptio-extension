@@ -296,6 +296,5 @@ async function setMasterPassword(masterKey) {
     });
 }
 
-// Le funzioni sono esportate globalmente per compatibilità con popup.html
-// background.js può importarle come ES6 module anche senza export esplicito
-// perché usa "type": "module" e può importare globals
+// Le funzioni sono disponibili globalmente per popup.html
+// background.js usa crypto-module.js (versione ES6 module separata)
