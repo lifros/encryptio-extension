@@ -230,58 +230,11 @@ document.addEventListener('click', async (e) => {
         
         const passwords = await vaultResponse.json();
         console.log('[Encryptio Detector] Vault recuperato,', passwords.length, 'password trovate');
-        
-        // Funzione per normalizzare URL (inline per questo script)
-        const normalizeUrl = (u) => {
-            if (!u) return '';
-            try {
-                const urlObj = new URL(u);
-                let normalized = urlObj.protocol + '//' + urlObj.hostname.replace(/^www\./, '') + urlObj.pathname;
-                if (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
-                return normalized.toLowerCase();
-            } catch {
-                return u.toLowerCase();
-            }
-        };
-        
-        // Normalizza l'URL target una volta per tutte (usato in più punti)
+
+        // Normalizza l'URL target (usa funzione da utils.js)
         const normalizedTargetUrl = normalizeUrl(url);
-        
-        // Funzione migliorata per matching URL
-        const urlsMatch = (url1, url2) => {
-            if (!url1 || !url2) return false;
-            const n1 = normalizeUrl(url1);
-            const n2 = normalizeUrl(url2);
-            if (n1 === n2) return true;
-            
-            // Estrai domini base
-            const extractDomain = (u) => {
-                try {
-                    return new URL(u).hostname.replace(/^www\./, '').toLowerCase();
-                } catch {
-                    return u.toLowerCase();
-                }
-            };
-            
-            const domain1 = extractDomain(url1);
-            const domain2 = extractDomain(url2);
-            
-            // Se i domini corrispondono, considera un match
-            if (domain1 === domain2) return true;
-            
-            // Controlla se un URL contiene l'altro (per gestire path diversi)
-            if (n1.includes(n2) || n2.includes(n1)) {
-                const parts1 = n1.split('/');
-                const parts2 = n2.split('/');
-                if (parts1[0] === parts2[0] && parts1[1] === parts2[1]) {
-                    return true;
-                }
-            }
-            
-            return false;
-        };
-        
-        // Trova la password corrispondente all'URL (migliorato per gestire più password)
+
+        // Trova la password corrispondente all'URL (usa funzioni da utils.js)
         let matchingPassword = null;
         let exactMatch = null;
         let domainMatch = null;
