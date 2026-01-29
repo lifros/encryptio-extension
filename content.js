@@ -1,34 +1,11 @@
 /**
  * ENCRYPTIO - Content Script
  * Gestisce l'interazione diretta con le pagine web
+ *
+ * Dipende da utils.js che viene caricato prima dal background worker
+ * Le funzioni normalizeUrl, urlsMatch, validateUsername, validatePassword, cleanupExpiredCredentials
+ * sono disponibili globalmente da utils.js
  */
-
-// Carica funzioni utility (se disponibili, altrimenti usa fallback)
-let normalizeUrl, urlsMatch, cleanupExpiredCredentials;
-if (typeof window.normalizeUrl === 'function') {
-    normalizeUrl = window.normalizeUrl;
-    urlsMatch = window.urlsMatch;
-    cleanupExpiredCredentials = window.cleanupExpiredCredentials;
-} else {
-    // Fallback inline se utils.js non è caricato
-    normalizeUrl = function(u) {
-        if (!u) return '';
-        try {
-            const urlObj = new URL(u);
-            let normalized = urlObj.protocol + '//' + urlObj.hostname.replace(/^www\./, '') + urlObj.pathname;
-            if (normalized.endsWith('/')) normalized = normalized.slice(0, -1);
-            return normalized.toLowerCase();
-        } catch {
-            return u.toLowerCase();
-        }
-    };
-    urlsMatch = function(url1, url2) {
-        const n1 = normalizeUrl(url1);
-        const n2 = normalizeUrl(url2);
-        return n1 === n2 || n1.includes(n2) || n2.includes(n1);
-    };
-    cleanupExpiredCredentials = async function() {};
-}
 
 // Funzione per creare/mostrare overlay di stato
 function showStatusOverlay(message, type = 'info') {
