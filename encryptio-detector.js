@@ -5,6 +5,47 @@
  */
 
 /**
+ * Verifica se il contesto dell'estensione è ancora valido
+ */
+function isExtensionContextValid() {
+    try {
+        return chrome.runtime && chrome.runtime.id;
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
+ * Wrapper sicuro per chrome.runtime.sendMessage che gestisce context invalidation
+ */
+function safeSendMessage(message, callback) {
+    if (!isExtensionContextValid()) {
+        if (callback) {
+            callback({ success: false, error: 'Extension context invalidated. Please reload the page.' });
+        }
+        return;
+    }
+
+    try {
+        chrome.runtime.sendMessage(message, (response) => {
+            if (chrome.runtime.lastError) {
+                console.error('[Encryptio Detector] Runtime error:', chrome.runtime.lastError.message);
+                if (callback) {
+                    callback({ success: false, error: chrome.runtime.lastError.message });
+                }
+            } else {
+                if (callback) callback(response);
+            }
+        });
+    } catch (error) {
+        console.error('[Encryptio Detector] Send message error:', error);
+        if (callback) {
+            callback({ success: false, error: error.message });
+        }
+    }
+}
+
+/**
  * Valida che l'URL della risposta provenga da encryptio.it
  */
 function validateApiOrigin(url) {
@@ -29,7 +70,7 @@ async function secureFetch(url, options = {}) {
 
     // Usa background worker come proxy per bypassare CORS in Manifest V3
     return new Promise((resolve, reject) => {
-        chrome.runtime.sendMessage({
+        safeSendMessage({
             action: 'fetch_api',
             url: url,
             method: options.method || 'GET',
@@ -37,13 +78,12 @@ async function secureFetch(url, options = {}) {
             credentials: options.credentials || 'include',
             body: options.body
         }, (response) => {
-            if (chrome.runtime.lastError) {
-                reject(new Error(chrome.runtime.lastError.message));
-                return;
-            }
-
-            if (!response) {
-                reject(new Error('Nessuna risposta dal background worker'));
+            if (!response || !response.ok) {
+                if (response && response.error) {
+                    reject(new Error(response.error));
+                } else {
+                    reject(new Error('Nessuna risposta dal background worker'));
+                }
                 return;
             }
 
@@ -81,10 +121,16 @@ async function secureFetch(url, options = {}) {
 
 // Intercetta i click sui link delle password nella dashboard
 document.addEventListener('click', async (e) => {
+    // Verifica se il contesto dell'estensione è ancora valido
+    if (!isExtensionContextValid()) {
+        console.warn('[Encryptio Detector] Extension context invalidated. Please reload the page.');
+        return;
+    }
+
     // Verifica se il click è su un link URL di una password nella dashboard
     const link = e.target.closest('a[href^="http"]');
     if (!link) return;
-    
+
     // Verifica se siamo nella dashboard
     if (!window.location.pathname.includes('/user/dashboard')) return;
     
@@ -114,7 +160,7 @@ document.addEventListener('click', async (e) => {
     
     try {
         // Notifica inizio elaborazione
-        chrome.runtime.sendMessage({
+        safeSendMessage({
             action: 'show_notification',
             type: 'info',
             title: 'Encryptio',
@@ -320,7 +366,7 @@ document.addEventListener('click', async (e) => {
 
         // Usa background worker per encryption (ha accesso a crypto.js)
         const encryptResponse = await new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage({
+            safeSendMessage({
                 action: 'encrypt_credentials',
                 data: {
                     username: (matchingPassword.username || '').trim(),
@@ -330,9 +376,7 @@ document.addEventListener('click', async (e) => {
                     passwordName: (matchingPassword.name || matchingPassword.username || 'Password').trim()
                 }
             }, (response) => {
-                if (chrome.runtime.lastError) {
-                    reject(new Error(chrome.runtime.lastError.message));
-                } else if (!response || !response.success) {
+                if (!response || !response.success) {
                     reject(new Error(response?.error || 'Encryption failed'));
                 } else {
                     resolve(response);
