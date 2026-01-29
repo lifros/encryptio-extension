@@ -158,11 +158,25 @@ async function checkAndFillAutoCredentials() {
             const storedData = allStorage[key];
             if (!storedData) continue;
 
-            // Decifra i dati se sono cifrati
+            // Decifra i dati se sono cifrati (usa background worker)
             let data;
             if (storedData.encrypted && storedData.data) {
                 try {
-                    data = await decryptTemporaryData(storedData.data);
+                    const decryptResponse = await new Promise((resolve, reject) => {
+                        chrome.runtime.sendMessage({
+                            action: 'decrypt_credentials',
+                            encryptedData: storedData.data
+                        }, (response) => {
+                            if (chrome.runtime.lastError) {
+                                reject(new Error(chrome.runtime.lastError.message));
+                            } else if (!response || !response.success) {
+                                reject(new Error(response?.error || 'Decryption failed'));
+                            } else {
+                                resolve(response);
+                            }
+                        });
+                    });
+                    data = decryptResponse.data;
                 } catch (error) {
                     console.error('[Encryptio] Errore decifratura credenziali:', error);
                     continue;

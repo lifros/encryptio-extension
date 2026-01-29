@@ -114,7 +114,7 @@ async function injectContentScript(tabId) {
     try {
         await chrome.scripting.executeScript({
             target: { tabId: tabId },
-            files: ['utils.js', 'crypto.js', 'content.js']
+            files: ['utils.js', 'content.js']
         });
         console.log('[Background] Content script iniettato in tab:', tabId);
         return true;
@@ -198,6 +198,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             })
             .catch(error => {
                 console.error('[Background] Errore encryption:', error);
+                sendResponse({ success: false, error: error.message });
+            });
+
+        return true; // Risposta asincrona
+    } else if (request.action === "decrypt_credentials") {
+        // Decripta credenziali dallo storage temporaneo
+        console.log('[Background] Richiesta decryption credenziali');
+
+        decryptTemporaryData(request.encryptedData)
+            .then(decryptedData => {
+                sendResponse({ success: true, data: decryptedData });
+            })
+            .catch(error => {
+                console.error('[Background] Errore decryption:', error);
                 sendResponse({ success: false, error: error.message });
             });
 
