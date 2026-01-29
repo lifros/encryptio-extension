@@ -260,3 +260,12 @@ async function setMasterPassword(masterKey) {
     });
 }
 
+// Export per ES6 modules (background.js)
+export {
+    encryptTemporaryData,
+    decryptTemporaryData,
+    encryptPassword,
+    decryptPassword,
+    getMasterPassword,
+    setMasterPassword
+};

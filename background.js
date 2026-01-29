@@ -3,6 +3,9 @@
  * Gestisce la comunicazione tra content scripts e popup
  */
 
+// Importa funzioni di encryption da crypto.js
+import { encryptTemporaryData, decryptTemporaryData } from './crypto.js';
+
 // Session management
 let lastActivityTimestamp = Date.now();
 const SESSION_TIMEOUT = 15 * 60 * 1000; // 15 minuti
@@ -103,9 +106,6 @@ async function cleanupExpiredCredentials() {
 // Esegui pulizia all'avvio e ogni 5 minuti
 cleanupExpiredCredentials();
 setInterval(cleanupExpiredCredentials, 5 * 60 * 1000);
-
-// Importa crypto.js per funzioni di encryption
-importScripts('crypto.js');
 
 /**
  * Inietta content script dinamicamente quando richiesto
