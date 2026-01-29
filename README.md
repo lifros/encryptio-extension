@@ -197,7 +197,7 @@ The extension requires these permissions:
 
 MIT License - see [LICENSE](./LICENSE) file for details.
 
-Copyright © 2025 Encryptio Password Manager
+Copyright © 2026 Encryptio Password Manager
 
 ---
 
