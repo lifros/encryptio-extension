@@ -3,8 +3,12 @@
  * Gestisce la comunicazione tra content scripts e popup
  */
 
-// Importa funzioni di encryption da crypto.js
-import { encryptTemporaryData, decryptTemporaryData } from './crypto.js';
+// Carica crypto.js come script globale (compatibile con popup.html)
+// In Manifest V3 service workers, dobbiamo caricare lo script manualmente
+self.importScripts('crypto.js');
+
+// Ora le funzioni sono disponibili globalmente:
+// encryptTemporaryData, decryptTemporaryData, etc.
 
 // Session management
 let lastActivityTimestamp = Date.now();

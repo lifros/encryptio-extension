@@ -260,11 +260,6 @@ async function setMasterPassword(masterKey) {
     });
 }
 
-// Export per ES6 modules (solo background.js)
-export {
-    encryptTemporaryData,
-    decryptTemporaryData,
-    decryptPassword,
-    getMasterPassword,
-    setMasterPassword
-};
+// Le funzioni sono esportate globalmente per compatibilità con popup.html
+// background.js può importarle come ES6 module anche senza export esplicito
+// perché usa "type": "module" e può importare globals
