@@ -19,7 +19,7 @@ function validateApiOrigin(url) {
 }
 
 /**
- * Fetch sicura che valida l'origine della risposta
+ * Fetch sicura che valida l'origine e usa background worker per bypassare CORS
  */
 async function secureFetch(url, options = {}) {
     // Valida URL prima della chiamata
@@ -27,14 +27,56 @@ async function secureFetch(url, options = {}) {
         throw new Error('Origine API non autorizzata');
     }
 
-    const response = await fetch(url, options);
+    // Usa background worker come proxy per bypassare CORS in Manifest V3
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+            action: 'fetch_api',
+            url: url,
+            method: options.method || 'GET',
+            headers: options.headers || {},
+            credentials: options.credentials || 'include',
+            body: options.body
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+            }
 
-    // Valida URL della risposta (in caso di redirect)
-    if (!validateApiOrigin(response.url)) {
-        throw new Error('Risposta da origine non autorizzata');
-    }
+            if (!response) {
+                reject(new Error('Nessuna risposta dal background worker'));
+                return;
+            }
 
-    return response;
+            // Valida URL della risposta (in caso di redirect)
+            if (response.url && !validateApiOrigin(response.url)) {
+                reject(new Error('Risposta da origine non autorizzata'));
+                return;
+            }
+
+            // Crea un oggetto simile a Response
+            const mockResponse = {
+                ok: response.ok,
+                status: response.status,
+                statusText: response.statusText,
+                url: response.url,
+                headers: new Map(Object.entries(response.headers || {})),
+                json: async () => {
+                    if (typeof response.data === 'object') {
+                        return response.data;
+                    }
+                    return JSON.parse(response.data);
+                },
+                text: async () => {
+                    if (typeof response.data === 'string') {
+                        return response.data;
+                    }
+                    return JSON.stringify(response.data);
+                }
+            };
+
+            resolve(mockResponse);
+        });
+    });
 }
 
 // Intercetta i click sui link delle password nella dashboard

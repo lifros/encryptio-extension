@@ -138,7 +138,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Aggiorna attività ad ogni messaggio
     updateActivity();
 
-    if (request.action === "get_auto_token") {
+    if (request.action === "fetch_api") {
+        // Proxy per fetch API che bypassa CORS (solo background worker può farlo)
+        console.log('[Background] Proxy fetch API:', request.url);
+
+        fetch(request.url, {
+            method: request.method || 'GET',
+            headers: request.headers || {},
+            credentials: request.credentials || 'include',
+            body: request.body ? JSON.stringify(request.body) : undefined
+        })
+        .then(async response => {
+            const responseData = {
+                ok: response.ok,
+                status: response.status,
+                statusText: response.statusText,
+                url: response.url,
+                headers: {}
+            };
+
+            // Copia headers rilevanti
+            response.headers.forEach((value, key) => {
+                responseData.headers[key] = value;
+            });
+
+            // Leggi body come text
+            const text = await response.text();
+
+            // Prova a parsare come JSON
+            try {
+                responseData.data = JSON.parse(text);
+            } catch {
+                responseData.data = text;
+            }
+
+            sendResponse(responseData);
+        })
+        .catch(error => {
+            console.error('[Background] Errore fetch API:', error);
+            sendResponse({
+                ok: false,
+                status: 0,
+                statusText: error.message,
+                error: error.message
+            });
+        });
+
+        return true; // Risposta asincrona
+    } else if (request.action === "get_auto_token") {
         console.log('[Background] Richiesta token automatico ricevuta');
         
         // Prova prima a chiamare direttamente l'API se il sender è su encryptio.it
